@@ -11,6 +11,7 @@ BIN_DIR = bin
 
 SRCS = $(SRC_DIR)/tsp_map_renderer.cpp \
 	   $(SRC_DIR)/shader_utils.cpp     \
+	   $(SRC_DIR)/io_utils.cpp         \
 	   $(SRC_DIR)/geo.cpp
 OBJS = $(patsubst $(SRC_DIR)/%.cpp, $(OBJ_DIR)/%.o, $(SRCS))
 TARGET = $(BIN_DIR)/map_renderer

@@ -194,9 +194,9 @@ renderVertices(
 }
 
 void
-    renderEdges(
-        AppState& appState,
-        gl_Edges& gl_es
+renderEdges(
+    AppState& appState,
+    gl_Edges& gl_es
 )
 {
     glUseProgram(appState.shaderProgs[SHADER_EDGES]);
@@ -373,15 +373,6 @@ cleanOpenGLContext(GLFWwindow *window)
 {
     glfwDestroyWindow(window);
     glfwTerminate();
-}
-
-bool
-isValidFilePath(
-    const std::string& filepath
-)
-{
-    fs::path path(filepath);
-    return fs::exists(path) && fs::is_regular_file(path);
 }
 
 int main(int argc, char *argv[])
