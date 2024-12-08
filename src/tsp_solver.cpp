@@ -17,16 +17,6 @@
 #include "utils.hpp"
 
 
-/** BEGIN Forward declarations **/
-bool
-isValidFilePath(
-    const std::string& filepath
-);
-bool
-isValidDirectoryPath(
-    const std::string& dirPath);
-/** END Forward declarations **/
-
 std::vector<std::vector<float>>
 getDistanceMatrix(
     std::vector<std::pair<float,float>>& nodes
