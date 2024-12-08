@@ -1,9 +1,9 @@
 # Travelling Salesman Problem (TSP) Solver & Visualizer 
-This repository provides a simple TSP solver based on the Christofides algorithm.<\br>
-It also includes a map visualizer using OpenGL 3.3.<\br>
+This repository provides a simple TSP solver based on the Christofides algorithm.<br>
+It also includes a map visualizer using OpenGL 3.3.<br>
 
-For ease of reproducibility, a Docker environment setup is provided.<\br>
-Using Docker is optional as long as the user has the relevant package dependencies to run the program.<\br>
+For ease of reproducibility, a Docker environment setup is provided.<br>
+Using Docker is optional as long as the user has the relevant package dependencies to run the program.<br>
 
 ## Docker environment setup (optional)
 ### Build the docker image
@@ -15,7 +15,7 @@ $ docker/build.sh
 $ script/docker.sh
 ```
 ## Build the solver
-Once built, the program `bin/vanilla-tsp' should be generated.<\br>
+Once built, the program `bin/vanilla-tsp' should be generated.<br>
 ```shell
 $ make solver
 ```
@@ -29,7 +29,7 @@ Please refer to the `examples` folder for the file format.
 - `--verbose` is optional and will print extra informational messages.
 
 ## Build the map visualizer
-Once built, the program `bin/map-renderer' should be generated.<\br>
+Once built, the program `bin/map-renderer' should be generated.<br>
 ```shell
 $ make map-renderer
 ```
