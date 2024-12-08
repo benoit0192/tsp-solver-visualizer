@@ -1,0 +1,33 @@
+CXX = g++
+
+CXXFLAGS = -Wall -Wextra -std=c++23
+INCLUDES = -Iinclude
+LDFLAGS = -lboost_system -lboost_graph
+
+SRC_DIR = src
+OBJ_DIR = obj
+BIN_DIR = bin
+
+SRCS = $(SRC_DIR)/tsp_solver.cpp \
+	   $(SRC_DIR)/io_utils.cpp
+OBJS = $(patsubst $(SRC_DIR)/%.cpp, $(OBJ_DIR)/%.o, $(SRCS))
+TARGET = $(BIN_DIR)/vanilla-tsp
+
+all: $(TARGET)
+
+$(OBJ_DIR) $(BIN_DIR):
+	mkdir -p $@
+
+$(TARGET): $(OBJ_DIR) $(BIN_DIR) $(OBJS)
+	$(CXX) $(CXXFLAGS) $(OBJS) -o $@ $(LDFLAGS)
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+
+clean:
+	rm -rf $(OBJ_DIR) $(BIN_DIR)
+
+run: $(TARGET)
+	./$(TARGET) $(wordlist 2, $(words $(MAKECMDGOALS)), $(MAKECMDGOALS))
+
+.PHONY: all clean run

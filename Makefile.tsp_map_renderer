@@ -1,0 +1,39 @@
+
+CXX = g++
+CXXFLAGS = -Wall -Wextra -std=c++23
+DEBUG_FLAGS = -g
+INCLUDES = -Iinclude
+LDFLAGS = -lGLEW -lGL -lglfw -lX11 -lpthread -ldl -lm
+
+SRC_DIR = src
+OBJ_DIR = obj
+BIN_DIR = bin
+
+SRCS = $(SRC_DIR)/tsp_map_renderer.cpp \
+	   $(SRC_DIR)/shader_utils.cpp     \
+	   $(SRC_DIR)/geo.cpp
+OBJS = $(patsubst $(SRC_DIR)/%.cpp, $(OBJ_DIR)/%.o, $(SRCS))
+TARGET = $(BIN_DIR)/map_renderer
+
+all: $(TARGET)
+
+$(OBJ_DIR) $(BIN_DIR):
+	mkdir -p $@
+
+$(TARGET): $(OBJ_DIR) $(BIN_DIR) $(OBJS)
+	$(CXX) $(CXXFLAGS) $(OBJS) -o $@ $(LDFLAGS)
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+
+clean:
+	rm -rf $(OBJ_DIR) $(BIN_DIR)
+
+run: $(TARGET)
+	./$(TARGET) $(wordlist 2, $(words $(MAKECMDGOALS)), $(MAKECMDGOALS))
+
+run-debug: clean
+	$(MAKE) CXXFLAGS="$(CXXFLAGS) $(DEBUG_FLAGS)" $(TARGET)
+	gdb ./$(TARGET)
+
+.PHONY: all clean run run-debug
