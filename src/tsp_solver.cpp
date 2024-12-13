@@ -6,6 +6,7 @@
 #include <fstream>
 #include <climits>
 #include <iomanip>
+#include <numeric>
 #include <iostream>
 #include <filesystem>
 #include <unordered_map>
@@ -19,16 +20,22 @@
 
 std::vector<std::vector<float>>
 getDistanceMatrix(
-    std::vector<std::pair<float,float>>& nodes
+    const std::vector<std::vector<float>>& nodes
 )
 {
-    int n=nodes.size();
+    size_t n=nodes.size();
     std::vector<std::vector<float>> distMat(n, std::vector<float>(n));
-    for (int i=0; i<n; ++i) {
-        auto& [x1,y1] = nodes[i];
-        for (int j=0; j<n; ++j) {
-            auto& [x2,y2] = nodes[j];
-            distMat[i][j] = std::sqrt((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2));
+    for (size_t i=0; i<n; ++i) {
+        for (size_t j=i; j<n; ++j) {
+            auto& n1 = nodes[i];
+            auto& n2 = nodes[j];
+            float cum_prod = std::transform_reduce(
+                n1.begin(), n1.end(), n2.begin(), 0.0f,
+                std::plus<>(), [](float a, float b) { return (a-b) * (a-b); }
+            );
+            float dist = std::sqrt(cum_prod);
+            distMat[i][j] = dist;
+            distMat[j][i] = dist;
         }
     }
     return distMat;
@@ -356,7 +363,7 @@ convertEulerianToHamiltonian(
 
 std::vector<int>
 resolveTSP(
-    std::vector<std::pair<float,float>>& nodes,
+    std::vector<std::vector<float>>& nodes,
     bool verbose=false
 )
 {
@@ -398,12 +405,12 @@ resolveTSP(
     return hCircuit;
 }
 
-std::vector<std::pair<float, float>>
+std::vector<std::vector<float>>
 readInputFromFile(
     const std::string& filename
 )
 {
-    std::vector<std::pair<float, float>> nodes;
+    std::vector<std::vector<float>> nodes;
     std::ifstream file(filename);
 
     if (!file.is_open()) {
@@ -411,19 +418,34 @@ readInputFromFile(
                 (boost::format("Failed to open file: %1%.") % filename).str());
     }
     std::string line;
+    size_t curLineNum=1;
     while (std::getline(file, line)) {
-        if (line.contains(',')) {
-            int cIx = line.find(',');
-            std::string xStr = line.substr(0,cIx);
-            std::string yStr = line.substr(cIx+1);
-            if (xStr.empty() || yStr.empty()) {
-                throw std::runtime_error(
-                    (boost::format("Failed to parse entry: %1%.") % line).str());
-            }
-            float x = std::stof(xStr);
-            float y = std::stof(yStr);
-            nodes.emplace_back(x, y);
+        if (line.starts_with('#')) {
+            //Do nothing
         }
+        else if (line.contains(',')) {
+            std::stringstream ss(line);
+            std::vector<float> x_nd;
+            std::string compStr;
+            while (std::getline(ss, compStr, ',')) {
+                try {
+                    float comp = std::stof(compStr);
+                    x_nd.push_back(comp);
+                } catch (const std::exception& e) {
+                    throw std::runtime_error((boost::format(
+                        "ERROR: Failed to parse '%1%' at line %2%: %3%")
+                        % compStr % curLineNum % e.what()).str());
+                }
+            }
+            if (!nodes.empty() && nodes.back().size() != x_nd.size()) {
+                throw std::runtime_error((boost::format(
+                    "ERROR: Inconsistent dimension size (%1% != %2%) at line %3%")
+                    % nodes.back().size() % x_nd.size() % curLineNum).str()
+                );
+            }
+            nodes.emplace_back(std::move(x_nd));
+        }
+        curLineNum++;
     }
     return nodes;
 }
@@ -431,29 +453,33 @@ readInputFromFile(
 void
 writeOutputToFile(
     const std::string& filename,
-    std::vector<std::pair<float,float>>& nodes,
-    std::vector<int>& path
+    const std::vector<std::vector<float>>& nodes,
+    const std::vector<int>& path
 )
 {
     std::ofstream outFile(filename);
     if (!outFile) {
-        std::cerr << "Failed to open file for writing." << '\n';
+        std::cerr << "ERROR: Failed to open file for writing." << '\n';
         return;
     }
     /* Dump nodes */
-    for (auto& [x,y] : nodes) {
-        outFile << x << ':' << y << '\n';
+    for (auto& x_nd : nodes) {
+        for (size_t i=0; i<x_nd.size(); ++i) {
+            outFile << x_nd[i];
+            if (i < x_nd.size()-1) {
+                outFile << ':';
+            }
+        }
+        outFile << '\n';
     }
     /* Dump path */
-    std::string pathStr;
-    for (int& ix: path) {
-         pathStr += std::to_string(ix) + '-';
+    for (size_t i=0; i<path.size(); ++i) {
+         outFile << path[i];
+         if (i < path.size()-1) {
+             outFile << '-';
+         }
     }
-    if (!pathStr.empty()) {
-        pathStr.pop_back();
-        pathStr += '\n';
-    }
-    outFile << pathStr;
+    outFile << '\n';
 
     outFile.close();
 }
@@ -511,7 +537,6 @@ parseArgs(
                       % outDir).str();
         return false;
     }
-
     return true;
 }
 
@@ -531,7 +556,7 @@ int main(int argc, char *argv[]) {
 
     std::string solverOutPath = (fs::path(outDir) / fs::path("solver_data")).string();
 
-    auto nodes = readInputFromFile(nodesInPath);
+    auto nodes            = readInputFromFile(nodesInPath);
     std::vector<int> path = resolveTSP(nodes, verbose);
     writeOutputToFile(solverOutPath, nodes, path);
 
