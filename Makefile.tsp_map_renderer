@@ -33,8 +33,11 @@ clean:
 run: $(TARGET)
 	./$(TARGET) $(wordlist 2, $(words $(MAKECMDGOALS)), $(MAKECMDGOALS))
 
-run-debug: clean
-	$(MAKE) CXXFLAGS="$(CXXFLAGS) $(DEBUG_FLAGS)" $(TARGET)
+debug: CXXFLAGS += $(DEBUG_FLAGS)
+debug: clean $(TARGET)
+
+run-debug: debug
 	gdb ./$(TARGET)
 
-.PHONY: all clean run run-debug
+
+.PHONY: all clean run debug run-debug

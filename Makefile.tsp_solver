@@ -1,6 +1,7 @@
 CXX = g++
 
 CXXFLAGS = -Wall -Wextra -std=c++23
+DEBUG_FLAGS = -g
 INCLUDES = -Iinclude
 LDFLAGS = -lboost_system -lboost_graph
 
@@ -30,4 +31,10 @@ clean:
 run: $(TARGET)
 	./$(TARGET) $(wordlist 2, $(words $(MAKECMDGOALS)), $(MAKECMDGOALS))
 
-.PHONY: all clean run
+debug: CXXFLAGS += $(DEBUG_FLAGS)
+debug: clean $(TARGET)
+
+run-debug: debug
+	gdb ./$(TARGET)
+
+.PHONY: all clean run debug run-debug
