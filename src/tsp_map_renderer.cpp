@@ -95,7 +95,6 @@ initVertices(
     std::vector<GLfloat>& vs
 )
 {
-    std::cout << "vs size: " << vs.size() << '\n';
     if (vs.size()%3 != 0) {
         std::cerr << "ERROR: Expected vertices size to be a multiple of 2.\n";
         return 0;
@@ -204,44 +203,57 @@ renderEdges(
     glDrawArrays(GL_TRIANGLES, 0, gl_es.count);
 }
 
-GLint
+bool
 loadData(
     std::string filename,
-    std::vector<std::pair<float,float>>& nodes_dst,
+    std::vector<std::vector<float>>& nodes_dst,
     std::vector<int>& path_dst
 )
 {
     std::ifstream inFile(filename);
     if (!inFile) {
-        std::cerr << "Failed to open the file" << '\n';
-        return 0;
+        std::cerr << "ERROR: Failed to open the file" << '\n';
+        return false;
     }
+    constexpr size_t MAX_DIM=3; // Support up to 3D
     std::string line;
+    size_t curLineNum=1;
     while (std::getline(inFile, line)) {
-        if (line.contains(':')) {
-            int scIx = line.find(':');
-            std::string xStr = line.substr(0,scIx);
-            std::string yStr = line.substr(scIx+1);
-            if (xStr.empty() || yStr.empty()) {
-                std::cerr << "Failed to parse entry: " << line << '\n';
-                return 0;
-            }
-            try {
-                float x = std::stof(xStr);
-                float y = std::stof(yStr);
-                nodes_dst.emplace_back(x, y);
-            } catch (const std::invalid_argument&) {
-                std::cerr << "ERROR: Non-numeric value in line: "
-                          << line
-                          << '\n';
-                return 0;
-            } catch (const std::out_of_range&) {
-                std::cerr << "ERROR: Number out of range in line: "
-                          << line
-                          << '\n';
-                return 0;
-            }
+        if (line.starts_with('#')) {
+            //Do nothing
         }
+        /* Decode nodes */
+        else if (line.contains(':')) {
+            std::stringstream ss(line);
+            std::vector<float> x_nd;
+            std::string compStr;
+            size_t dimCnt=0;
+            while (std::getline(ss, compStr, ':') && dimCnt < MAX_DIM) {
+                try {
+                    float comp = std::stof(compStr);
+                    x_nd.push_back(comp);
+                } catch (const std::exception& e) {
+                    std::cerr << "ERROR: Failed to parse '"
+                              << compStr << "' at line "
+                              << curLineNum << ": " << e.what();
+                    return false;
+                }
+                dimCnt++;
+            }
+            if (!nodes_dst.empty() && nodes_dst.back().size() != x_nd.size()) {
+                std::cerr << "ERROR: Inconsistent dimension size ("
+                          << nodes_dst.back().size() << " != " << x_nd.size()
+                          << ") at line " << curLineNum;
+                return false;
+            }
+            if (x_nd.size() < 2) {
+                std::cerr << "ERROR: Node dimension too small at line " 
+                          << curLineNum << '\n';
+                return false;
+            }
+            nodes_dst.emplace_back(std::move(x_nd));
+        }
+        /* Decode path */
         else if (line.contains('-')) {
             std::istringstream iss(line);
             std::string numStr;
@@ -249,68 +261,68 @@ loadData(
                 try {
                     int num = std::stoi(numStr);
                     path_dst.push_back(num);
-                } catch (const std::invalid_argument&) {
-                    std::cerr << "ERROR: Non-numeric value in line: "
-                              << line
-                              << '\n';
-                    return 0;
-                } catch (const std::out_of_range&) {
-                    std::cerr << "ERROR: Number out of range in line: "
-                              << line
-                              << '\n';
-                    return 0;
+                } catch (const std::exception& e) {
+                    std::cerr << "ERROR: Failed to parse '"
+                              << numStr << "' at line "
+                              << curLineNum << ": " << e.what();
+                    return false;
                 }
             }
         }
+        curLineNum++;
     }
     if (nodes_dst.empty()) {
         std::cerr << "ERROR: Number of nodes is empty.\n";
-        return 0;
+        return false;
     }
     if (path_dst.empty()) {
         std::cerr << "ERROR: Path is empty.\n";
-        return 0;
+        return false;
     }
-    return 1;
+    return true;
 }
-
+/**
+ * This function processes a set of nodes represented as vectors of floats.
+ * It normalizes each node's components to a [-1, 1] range while applying
+ * an optional padding to shrink the range.
+ */
 std::vector<float>
 normNodes(
-    std::vector<std::pair<float,float>>& nodes,
+    std::vector<std::vector<float>>& nodes,
     float padding = 0.0
 )
 {
     if (nodes.empty())
         return {};
+    const size_t dim = nodes.front().size();
     constexpr float MIN_PAD = 0.0, MAX_PAD = 0.4;
-    if (padding < MIN_PAD || padding >= MAX_PAD) {
+    if (padding < MIN_PAD || MAX_PAD < padding) {
         std::cerr << "Padding exceeds the allowed range [0.0, 0.4]."
                   << "It will be adjusted to fit within the allowed range.\n";
-        padding = std::max(MIN_PAD, std::min(padding, MAX_PAD));
+        padding = std::clamp(padding, MIN_PAD, MAX_PAD);
     }
     using Limits = std::numeric_limits<float>;
-    float mxX = Limits::lowest(), mxY = Limits::lowest();
-    float mnX = Limits::max(), mnY = Limits::max();
-    for (auto& [x,y] : nodes) {
-        mxX = std::max(mxX, x); mxY = std::max(mxY, y);
-        mnX = std::min(mnX, x); mnY = std::min(mnY, y);
+    std::vector<std::pair<float, float>> mn_mx_pairs(dim,
+                                            {Limits::max(), Limits::lowest()});
+    for (auto& x_nd : nodes) {
+        for (size_t i=0; i<dim; ++i) {
+            auto& [mn, mx] = mn_mx_pairs[i];
+            mn = std::min(mn, x_nd[i]);
+            mx = std::max(mx, x_nd[i]);
+        }
     }
-
+    const float scaleFactor = 2.0f * (1 - 2 * padding);
+    const float offset      = 1.0f - 2 * padding;
     std::vector<float> procNodes;
-    for (auto& [x,y] : nodes) {
-        float nx = x - mnX;
-        if (mxX - mnX > 0){
-            nx *= 2.0f*(1-2*padding) / (mxX - mnX);
-            nx -= (1.0f-2*padding);
+    for (auto& x_nd : nodes) {
+        for (size_t i=0; i<x_nd.size(); ++i) {
+            auto& [mn, mx] = mn_mx_pairs[i];
+            float nx  = x_nd[i] - mn;
+            if (mx - mn > 0.0f) {
+                nx = nx * scaleFactor / (mx - mn) - offset;
+            }
+            procNodes.push_back(nx);
         }
-        float ny = y - mnY;
-        if (mxY - mnY > 0) {
-            ny *= 2.0f*(1-2*padding) / (mxY - mnY);
-            ny -= (1.0f-2*padding);
-        }
-        procNodes.push_back(nx);
-        procNodes.push_back(ny);
-        procNodes.push_back(0.0f); // TODO: Add z in the TSP solver?
     }
     return procNodes;
 }
@@ -395,7 +407,7 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    std::vector<std::pair<float,float>> nodes;
+    std::vector<std::vector<float>> nodes;
     std::vector<int> path;
     GLint success;
     success = loadData(filepath, nodes, path);
