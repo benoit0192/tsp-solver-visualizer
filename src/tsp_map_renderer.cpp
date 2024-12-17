@@ -1,9 +1,7 @@
 #include <vector>
 #include <climits>
-#include <fstream>
 #include <sstream>
 #include <iostream>
-#include <filesystem>
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -12,13 +10,11 @@
 #include "geo.hpp"
 #include "utils.hpp"
 
-
 #define WINDOW_WIDTH  600
 #define WINDOW_HEIGHT 600
 
 #define MIN_CANVAS_WIDTH  400
 #define MIN_CANVAS_HEIGHT 400
-
 
 enum ShaderType
 {
@@ -29,12 +25,22 @@ enum ShaderType
 
 typedef struct AppState
 {
-    size_t windowWidth    =600;
-    size_t windowHeight   =600;
-    size_t minCanvasWidth =400;
-    size_t minCanvasHeight=400;
+    size_t windowWidth    = 600;
+    size_t windowHeight   = 600;
+    size_t minCanvasWidth = 400;
+    size_t minCanvasHeight= 400;
     GLuint shaderProgs[SHADER_COUNT]={0};
 } AppState;
+
+typedef struct gl_Data
+{
+    GLuint VAO=0;
+    GLuint VBO=0;
+    size_t count=0;     // Number of vertices */
+    size_t dataSize=0;  // Total size of flattened data */
+    size_t compSize=0;  // Components per vertex (Vec2 or Vec3) */
+} gl_Data;
+
 
 void
 keyCallback(
@@ -82,126 +88,6 @@ framebufferSizeCallback(
     glUniform1f(scaleUniform, scaleFactor);
 }
 
-typedef struct gl_Vertices
-{
-    GLuint VAO=0;
-    GLuint VBO=0;
-    size_t count=0;
-} gl_Vertices;
-
-GLint
-initVertices(
-    gl_Vertices& gl_vs,
-    std::vector<GLfloat>& vs
-)
-{
-    if (vs.size()%3 != 0) {
-        std::cerr << "ERROR: Expected vertices size to be a multiple of 2.\n";
-        return 0;
-    }
-    gl_vs.count=vs.size()/3;
-
-    glGenVertexArrays(1, &gl_vs.VAO);
-    glBindVertexArray(gl_vs.VAO);
-
-    glGenBuffers(1, &gl_vs.VBO);
-    glBindBuffer(GL_ARRAY_BUFFER, gl_vs.VBO);
-    glBufferData(GL_ARRAY_BUFFER,
-                 vs.size()*sizeof(GLfloat),
-                 vs.data(),
-                 GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0,
-                          3,
-                          GL_FLOAT,
-                          GL_FALSE,
-                          3*sizeof(GL_FLOAT),
-                          (GLvoid*)0);
-    glEnableVertexAttribArray(0);
-    /* Reset */
-    glBindVertexArray(0);
-
-    return 1;
-}
-
-typedef struct gl_Edges
-{
-    GLuint VAO=0;
-    GLuint VBO=0;
-    size_t count=0;
-} gl_Edges;
-
-GLint
-initEdges(
-    gl_Edges& gl_es,
-    std::vector<GLfloat>& es
-)
-{
-    //WARNING: Would adjust accordingly if dealing with 3D data
-    if (es.size()%4 != 0) {
-        std::cerr << "ERROR: Expected number of edges to be a multiple of 4.\n";
-        return 0;
-    }
-
-    std::vector<GLfloat> quadEdges;
-    //WARNING: Would need to increase the looping offset if dealing with 3D data
-    for (size_t i=0; i<es.size(); i+=4) {
-        std::vector<GLfloat> quadVertices = generatePrismVertices(
-                                           glm::vec3(es[i+0], es[i+1], 0.0), // No 3d data yet
-                                           glm::vec3(es[i+2], es[i+3], 0.0),
-                                           0.03f,
-                                           0.03f);
-        quadEdges.insert(quadEdges.end(),
-                         quadVertices.begin(),
-                         quadVertices.end());
-    }
-    // Nums of triangles (2 triangles per edge)
-    gl_es.count=quadEdges.size()*0.5;
-
-    glGenVertexArrays(1, &gl_es.VAO);
-    glBindVertexArray(gl_es.VAO);
-
-    glGenBuffers(1, &gl_es.VBO);
-    glBindBuffer(GL_ARRAY_BUFFER, gl_es.VBO);
-    glBufferData(GL_ARRAY_BUFFER,
-                 quadEdges.size()*sizeof(GLfloat),
-                 quadEdges.data(),
-                 GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0,
-                          3,
-                          GL_FLOAT,
-                          GL_FALSE,
-                          3*sizeof(GL_FLOAT),
-                          (GLvoid*)0);
-    glEnableVertexAttribArray(0);
-    /* Reset */
-    glBindVertexArray(0);
-
-    return 1;
-}
-
-void
-renderVertices(
-    AppState& appState,
-    gl_Vertices& gl_vs
-)
-{
-    glUseProgram(appState.shaderProgs[SHADER_VERTICES]);
-    glBindVertexArray(gl_vs.VAO);
-    glDrawArrays(GL_POINTS, 0, gl_vs.count);
-}
-
-void
-renderEdges(
-    AppState& appState,
-    gl_Edges& gl_es
-)
-{
-    glUseProgram(appState.shaderProgs[SHADER_EDGES]);
-    glBindVertexArray(gl_es.VAO);
-    glDrawArrays(GL_TRIANGLES, 0, gl_es.count);
-}
 
 bool
 loadData(
@@ -330,22 +216,102 @@ normNodes(
 std::vector<float>
 extractEdgeNodes(
     std::vector<int>& path,
-    std::vector<float>& nodes1d
+    std::vector<float>& nodes1d,
+    gl_Data& gl_vs
 )
 {
+    size_t dim = gl_vs.compSize;
     std::vector<float> edgeNodes;
+    edgeNodes.reserve((path.size()-1) * 2 * dim);
     for (size_t i=0; i<path.size()-1; i++) {
         int e1Ix = path[i], e2Ix = path[i+1];
-        /* edgeNodes.push_back(nodes1d[2*e1Ix]); */
-        /* edgeNodes.push_back(nodes1d[2*e1Ix+1]); */
-        /* edgeNodes.push_back(nodes1d[2*e2Ix]); */
-        /* edgeNodes.push_back(nodes1d[2*e2Ix+1]); */
-        edgeNodes.push_back(nodes1d[3*e1Ix]);
-        edgeNodes.push_back(nodes1d[3*e1Ix+1]);
-        edgeNodes.push_back(nodes1d[3*e2Ix]);
-        edgeNodes.push_back(nodes1d[3*e2Ix+1]);
+        for (size_t d=0; d<dim; ++d) {
+            edgeNodes.push_back(nodes1d[dim * e1Ix + d]);
+        }
+        for (size_t d=0; d<dim; ++d) {
+            edgeNodes.push_back(nodes1d[dim * e2Ix + d]);
+        }
     }
     return edgeNodes;
+}
+
+std::vector<GLfloat>
+preprocessEdges(
+    const std::vector<GLfloat>& edges,
+    size_t dim
+)
+{
+    size_t offset = 2 * dim;
+    if (edges.size() % offset != 0) {
+        throw std::runtime_error("Invalid edge data: size mismatch.");
+    }
+
+    std::vector<GLfloat> processedEdges;
+    for (size_t i = 0; i < edges.size(); i += offset) {
+        glm::vec3 p1(0.0f), p2(0.0f);
+        for (size_t d = 0; d < dim; ++d) {
+            p1[d] = edges[i + d];
+            p2[d] = edges[i + dim + d];
+        }
+        auto prismVertices = generatePrismVertices(p1, p2, 0.03f, 0.03f);
+        processedEdges.insert(processedEdges.end(),
+                              prismVertices.begin(),
+                              prismVertices.end());
+    }
+    return processedEdges;
+}
+
+gl_Data initGLData(const std::vector<GLfloat>& data, size_t compSize)
+{
+
+    gl_Data gl_data  = {};
+    gl_data.compSize = compSize;
+    gl_data.dataSize = data.size();
+    gl_data.count    = data.size() / compSize;
+
+    glGenVertexArrays(1, &gl_data.VAO);
+    glBindVertexArray(gl_data.VAO);
+
+    glGenBuffers(1, &gl_data.VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, gl_data.VBO);
+    glBufferData(GL_ARRAY_BUFFER,
+                 data.size() * sizeof(GLfloat),
+                 data.data(),
+                 GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0,
+                          compSize,
+                          GL_FLOAT,
+                          GL_FALSE,
+                          compSize * sizeof(GL_FLOAT),
+                          (GLvoid*)0);
+    glEnableVertexAttribArray(0);
+
+    glBindVertexArray(0);
+
+    return gl_data;
+}
+
+void
+renderVertices(
+    AppState& appState,
+    gl_Data& gl_vs
+)
+{
+    glUseProgram(appState.shaderProgs[SHADER_VERTICES]);
+    glBindVertexArray(gl_vs.VAO);
+    glDrawArrays(GL_POINTS, 0, gl_vs.count);
+}
+
+void
+renderEdges(
+    AppState& appState,
+    gl_Data& gl_es
+)
+{
+    glUseProgram(appState.shaderProgs[SHADER_EDGES]);
+    glBindVertexArray(gl_es.VAO);
+    glDrawArrays(GL_TRIANGLES, 0, gl_es.count);
 }
 
 GLFWwindow*
@@ -387,10 +353,12 @@ cleanOpenGLContext(GLFWwindow *window)
     glfwTerminate();
 }
 
-int main(int argc, char *argv[])
+bool parseArgs(
+    int argc,
+    char *argv[],
+    std::string& filepath
+)
 {
-    std::cout << "== TSP Map Rendering ==" << '\n';
-
     std::string usage = std::string("Usage:\n")
          + "  ./map_renderer <DATA_FILEPATH>\n"
          + "  <DATA_FILEPATH> is the data filepath generated by the TSP solver program.\n";
@@ -398,24 +366,31 @@ int main(int argc, char *argv[])
     if (argc != 2) {
         std::cerr << "ERROR: Unexpected number of input arguments.\n";
         std::cout << usage << '\n';
-        return -1;
+        return false;
     }
-    std::string filepath = argv[1];
+    filepath = argv[1];
     if(!isValidFilePath(filepath)) {
         std::cerr << "ERROR: Provided data filepath does not exist:\n"
                   << "       " << filepath << '\n';
+        return false;
+    }
+    return true;
+}
+
+int main(int argc, char *argv[])
+{
+    std::cout << "== TSP Map Rendering ==" << '\n';
+
+    std::string filepath;
+    if (!parseArgs(argc, argv, filepath)) {
         return -1;
     }
 
     std::vector<std::vector<float>> nodes;
     std::vector<int> path;
-    GLint success;
-    success = loadData(filepath, nodes, path);
-    if (!success) {
+    if (!loadData(filepath, nodes, path)) {
         return -1;
     }
-    std::vector<float> vertices = normNodes(nodes, 0.1);
-    std::vector<float> edges    = extractEdgeNodes(path, vertices);
 
     AppState appState = {
             .windowWidth=WINDOW_WIDTH,
@@ -423,6 +398,7 @@ int main(int argc, char *argv[])
             .minCanvasWidth=MIN_CANVAS_WIDTH,
             .minCanvasHeight=MIN_CANVAS_HEIGHT,
     };
+
     GLFWwindow* window = initOpenGLWindow();
     if (!window) {
         cleanOpenGLContext(window);
@@ -433,53 +409,51 @@ int main(int argc, char *argv[])
 
     glfwSetWindowUserPointer(window, &appState);
 
+    /* Nodes shaders */
     GLuint shaderProg = glCreateProgram();
-    success = addShaderToProgram(shaderProg,
-                                 "shader/vertex_shader_nodes.glsl",
-                                 GL_VERTEX_SHADER);
-    if (!success) {
+    if (!addShaderToProgram(shaderProg,
+                            "shader/vertex_shader_nodes.glsl",
+                            GL_VERTEX_SHADER))
+    {
         cleanOpenGLContext(window);
         return -1;
     }
-    success = addShaderToProgram(shaderProg,
-                                 "shader/fragment_shader_nodes.glsl",
-                                 GL_FRAGMENT_SHADER);
-    if (!success) {
+    if (!addShaderToProgram(shaderProg,
+                            "shader/fragment_shader_nodes.glsl",
+                            GL_FRAGMENT_SHADER))
+    {
         cleanOpenGLContext(window);
         return -1;
     }
     appState.shaderProgs[SHADER_VERTICES] = shaderProg;
 
+    /* Edges shaders */
     GLuint shaderProgLines = glCreateProgram();
-    success = addShaderToProgram(shaderProgLines,
-                                 "shader/vertex_shader_edges.glsl",
-                                 GL_VERTEX_SHADER);
-    if (!success) {
+    if (!addShaderToProgram(shaderProgLines,
+                            "shader/vertex_shader_edges.glsl",
+                            GL_VERTEX_SHADER))
+    {
         cleanOpenGLContext(window);
         return -1;
     }
-    success = addShaderToProgram(shaderProgLines,
-                                 "shader/fragment_shader_edges.glsl",
-                                 GL_FRAGMENT_SHADER);
-    if (!success) {
+    if (!addShaderToProgram(shaderProgLines,
+                            "shader/fragment_shader_edges.glsl",
+                            GL_FRAGMENT_SHADER))
+    {
         cleanOpenGLContext(window);
         return -1;
     }
     appState.shaderProgs[SHADER_EDGES] = shaderProgLines;
-    /* Vertices data */
-    gl_Vertices gl_vs;
-    success = initVertices(gl_vs, vertices);
-    if (!success) {
-        cleanOpenGLContext(window);
-        return -1;
-    }
-    /* Edges data */
-    gl_Edges gl_es;
-    success = initEdges(gl_es, edges);
-    if (!success) {
-        cleanOpenGLContext(window);
-        return -1;
-    }
+
+    /* Init nodes data */
+    std::vector<float> vertices = normNodes(nodes, 0.1);
+    gl_Data gl_vs = initGLData(vertices, nodes.front().size());
+
+    /* Init edges data */
+    std::vector<float> edges = extractEdgeNodes(path, vertices, gl_vs);
+    edges                    = preprocessEdges(edges, nodes.front().size());
+    gl_Data gl_es = initGLData(edges, nodes.front().size());
+
     /* Callbacks */
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
     glfwSetKeyCallback(window, keyCallback);
