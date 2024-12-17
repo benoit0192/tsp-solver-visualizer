@@ -314,6 +314,46 @@ renderEdges(
     glDrawArrays(GL_TRIANGLES, 0, gl_es.count);
 }
 
+bool
+initShaders(
+    AppState& appState
+)
+{
+    /* Nodes shaders */
+    GLuint shaderProg = glCreateProgram();
+    if (!addShaderToProgram(shaderProg,
+                            "shader/vertex_shader_nodes.glsl",
+                            GL_VERTEX_SHADER))
+    {
+        return false;
+    }
+    if (!addShaderToProgram(shaderProg,
+                            "shader/fragment_shader_nodes.glsl",
+                            GL_FRAGMENT_SHADER))
+    {
+        return false;
+    }
+    appState.shaderProgs[SHADER_VERTICES] = shaderProg;
+
+    /* Edges shaders */
+    GLuint shaderProgLines = glCreateProgram();
+    if (!addShaderToProgram(shaderProgLines,
+                            "shader/vertex_shader_edges.glsl",
+                            GL_VERTEX_SHADER))
+    {
+        return false;
+    }
+    if (!addShaderToProgram(shaderProgLines,
+                            "shader/fragment_shader_edges.glsl",
+                            GL_FRAGMENT_SHADER))
+    {
+        return false;
+    }
+    appState.shaderProgs[SHADER_EDGES] = shaderProgLines;
+
+    return true;
+}
+
 GLFWwindow*
 initOpenGLWindow(void)
 {
@@ -404,46 +444,16 @@ int main(int argc, char *argv[])
         cleanOpenGLContext(window);
         return -1;
     }
+
     const GLubyte* version = glGetString(GL_VERSION);
     std::cout << "OpenGL Version: " << version << '\n';
 
     glfwSetWindowUserPointer(window, &appState);
 
-    /* Nodes shaders */
-    GLuint shaderProg = glCreateProgram();
-    if (!addShaderToProgram(shaderProg,
-                            "shader/vertex_shader_nodes.glsl",
-                            GL_VERTEX_SHADER))
-    {
+    if (!initShaders(appState)) {
         cleanOpenGLContext(window);
         return -1;
     }
-    if (!addShaderToProgram(shaderProg,
-                            "shader/fragment_shader_nodes.glsl",
-                            GL_FRAGMENT_SHADER))
-    {
-        cleanOpenGLContext(window);
-        return -1;
-    }
-    appState.shaderProgs[SHADER_VERTICES] = shaderProg;
-
-    /* Edges shaders */
-    GLuint shaderProgLines = glCreateProgram();
-    if (!addShaderToProgram(shaderProgLines,
-                            "shader/vertex_shader_edges.glsl",
-                            GL_VERTEX_SHADER))
-    {
-        cleanOpenGLContext(window);
-        return -1;
-    }
-    if (!addShaderToProgram(shaderProgLines,
-                            "shader/fragment_shader_edges.glsl",
-                            GL_FRAGMENT_SHADER))
-    {
-        cleanOpenGLContext(window);
-        return -1;
-    }
-    appState.shaderProgs[SHADER_EDGES] = shaderProgLines;
 
     /* Init nodes data */
     std::vector<float> vertices = normNodes(nodes, 0.1);
@@ -464,7 +474,7 @@ int main(int argc, char *argv[])
     framebufferSizeCallback(window, win_w, win_h);
 
     /* Rendering loop */
-    while(!glfwWindowShouldClose(window)) {
+    while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT);
 
         renderVertices(appState, gl_vs);
