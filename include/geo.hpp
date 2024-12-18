@@ -1,9 +1,10 @@
 #ifndef GEO_H
 #define GEO_H
 
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
 #include <vector>
+#include <iostream>
+#include <glm/glm.hpp>
+#include <GLFW/glfw3.h>
 
 glm::vec2
 computeOrthogonal2D(
@@ -22,12 +23,24 @@ generateQuadVertices(
     float lineWidth
 );
 
-std::vector<GLfloat>
-generatePrismVertices(
-    const glm::vec3& point1,
-    const glm::vec3& point2,
-    float width,
-    float height
+void
+generatePrisms(
+    const std::vector<float>& edges,
+    const float width,
+    const float height,
+    const size_t dim,
+    std::vector<float>& vertices,
+    std::vector<unsigned int>& indices
+);
+
+void
+generateSpheres(
+    float radius,
+    int stacks,
+    int slices,
+    const std::vector<std::vector<float>>& centers,
+    std::vector<float>& vertices,
+    std::vector<unsigned int>& indices
 );
 
 #endif // !GEO_H

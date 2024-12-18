@@ -36,9 +36,11 @@ typedef struct gl_Data
 {
     GLuint VAO=0;
     GLuint VBO=0;
-    size_t count=0;     // Number of vertices */
-    size_t dataSize=0;  // Total size of flattened data */
-    size_t compSize=0;  // Components per vertex (Vec2 or Vec3) */
+    GLuint EBO=0;
+    size_t count=0;     // Number of vertices
+    size_t vSize=0;     // Total size of flattened vertices data
+    size_t iSize=0;     // Total size of flattened indices data
+    size_t compSize=0;  // Components per vertex (Vec2 or Vec3)
 } gl_Data;
 
 
@@ -172,7 +174,7 @@ loadData(
  * It normalizes each node's components to a [-1, 1] range while applying
  * an optional padding to shrink the range.
  */
-std::vector<float>
+std::vector<std::vector<float>>
 normNodes(
     std::vector<std::vector<float>>& nodes,
     float padding = 0.0
@@ -199,75 +201,81 @@ normNodes(
     }
     const float scaleFactor = 2.0f * (1 - 2 * padding);
     const float offset      = 1.0f - 2 * padding;
-    std::vector<float> procNodes;
+    std::vector<std::vector<float>> procNodes;
+    procNodes.reserve(nodes.size() * dim);
     for (auto& x_nd : nodes) {
+        std::vector<float> x_nd_n;
+        x_nd.reserve(x_nd.size());
         for (size_t i=0; i<x_nd.size(); ++i) {
             auto& [mn, mx] = mn_mx_pairs[i];
             float nx  = x_nd[i] - mn;
             if (mx - mn > 0.0f) {
                 nx = nx * scaleFactor / (mx - mn) - offset;
             }
-            procNodes.push_back(nx);
+            x_nd_n.push_back(nx);
         }
+        procNodes.push_back(std::move(x_nd_n));
     }
     return procNodes;
 }
 
 std::vector<float>
 extractEdgeNodes(
-    std::vector<int>& path,
-    std::vector<float>& nodes1d,
-    gl_Data& gl_vs
+    const std::vector<int>& path,
+    const std::vector<std::vector<float>>& centers
 )
 {
-    size_t dim = gl_vs.compSize;
+    size_t dim = 0;
+    if (!centers.empty()) {
+        dim = centers.front().size();
+    }
     std::vector<float> edgeNodes;
     edgeNodes.reserve((path.size()-1) * 2 * dim);
     for (size_t i=0; i<path.size()-1; i++) {
         int e1Ix = path[i], e2Ix = path[i+1];
-        for (size_t d=0; d<dim; ++d) {
-            edgeNodes.push_back(nodes1d[dim * e1Ix + d]);
-        }
-        for (size_t d=0; d<dim; ++d) {
-            edgeNodes.push_back(nodes1d[dim * e2Ix + d]);
-        }
+
+        edgeNodes.insert(edgeNodes.end(),
+                         centers[e1Ix].begin(),
+                         centers[e1Ix].end());
+
+        edgeNodes.insert(edgeNodes.end(),
+                         centers[e2Ix].begin(),
+                         centers[e2Ix].end());
     }
     return edgeNodes;
 }
 
-std::vector<GLfloat>
+void
 preprocessEdges(
-    const std::vector<GLfloat>& edges,
-    size_t dim
+    const std::vector<int>& path,
+    const std::vector<std::vector<float>>& node_centers,
+    std::vector<float>& edge_vertices,
+    std::vector<unsigned int>& edge_indices
 )
 {
-    size_t offset = 2 * dim;
-    if (edges.size() % offset != 0) {
-        throw std::runtime_error("Invalid edge data: size mismatch.");
-    }
+    std::vector<float> edges = extractEdgeNodes(path, node_centers);
 
-    std::vector<GLfloat> processedEdges;
-    for (size_t i = 0; i < edges.size(); i += offset) {
-        glm::vec3 p1(0.0f), p2(0.0f);
-        for (size_t d = 0; d < dim; ++d) {
-            p1[d] = edges[i + d];
-            p2[d] = edges[i + dim + d];
-        }
-        auto prismVertices = generatePrismVertices(p1, p2, 0.03f, 0.03f);
-        processedEdges.insert(processedEdges.end(),
-                              prismVertices.begin(),
-                              prismVertices.end());
+    size_t dim = 0;
+    if (!node_centers.empty()) {
+        dim = node_centers.front().size();
     }
-    return processedEdges;
+    const float width = 0.05;
+    generatePrisms(edges, width, width, dim, edge_vertices, edge_indices);
 }
 
-gl_Data initGLData(const std::vector<GLfloat>& data, size_t compSize)
+gl_Data
+initGLData(
+    const std::vector<GLfloat>& vertices,
+    const std::vector<GLuint>& indices,
+    size_t compSize
+)
 {
 
     gl_Data gl_data  = {};
     gl_data.compSize = compSize;
-    gl_data.dataSize = data.size();
-    gl_data.count    = data.size() / compSize;
+    gl_data.vSize    = vertices.size();
+    gl_data.iSize    = indices.size();
+    gl_data.count    = vertices.size() / compSize;
 
     glGenVertexArrays(1, &gl_data.VAO);
     glBindVertexArray(gl_data.VAO);
@@ -275,8 +283,15 @@ gl_Data initGLData(const std::vector<GLfloat>& data, size_t compSize)
     glGenBuffers(1, &gl_data.VBO);
     glBindBuffer(GL_ARRAY_BUFFER, gl_data.VBO);
     glBufferData(GL_ARRAY_BUFFER,
-                 data.size() * sizeof(GLfloat),
-                 data.data(),
+                 vertices.size() * sizeof(GLfloat),
+                 vertices.data(),
+                 GL_STATIC_DRAW);
+
+    glGenBuffers(1, &gl_data.EBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl_data.EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                 indices.size() * sizeof(GLuint),
+                 indices.data(),
                  GL_STATIC_DRAW);
 
     glVertexAttribPointer(0,
@@ -293,6 +308,16 @@ gl_Data initGLData(const std::vector<GLfloat>& data, size_t compSize)
 }
 
 void
+clearGLData(
+    gl_Data& gl_data
+)
+{
+    glDeleteVertexArrays(1, &gl_data.VAO);
+    glDeleteBuffers(1, &gl_data.VBO);
+    glDeleteBuffers(1, &gl_data.EBO);
+}
+
+void
 renderVertices(
     AppState& appState,
     gl_Data& gl_vs
@@ -300,7 +325,7 @@ renderVertices(
 {
     glUseProgram(appState.shaderProgs[SHADER_VERTICES]);
     glBindVertexArray(gl_vs.VAO);
-    glDrawArrays(GL_POINTS, 0, gl_vs.count);
+    glDrawElements(GL_TRIANGLES, gl_vs.iSize, GL_UNSIGNED_INT, 0);
 }
 
 void
@@ -311,7 +336,7 @@ renderEdges(
 {
     glUseProgram(appState.shaderProgs[SHADER_EDGES]);
     glBindVertexArray(gl_es.VAO);
-    glDrawArrays(GL_TRIANGLES, 0, gl_es.count);
+    glDrawElements(GL_TRIANGLES, gl_es.iSize, GL_UNSIGNED_INT, 0);
 }
 
 bool
@@ -426,9 +451,9 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    std::vector<std::vector<float>> nodes;
+    std::vector<std::vector<float>> node_centers;
     std::vector<int> path;
-    if (!loadData(filepath, nodes, path)) {
+    if (!loadData(filepath, node_centers, path)) {
         return -1;
     }
 
@@ -456,13 +481,18 @@ int main(int argc, char *argv[])
     }
 
     /* Init nodes data */
-    std::vector<float> vertices = normNodes(nodes, 0.1);
-    gl_Data gl_vs = initGLData(vertices, nodes.front().size());
+    node_centers = normNodes(node_centers, 0.1);
+    std::vector<float> node_vertices;
+    std::vector<unsigned int> node_indices;
+    float radius=0.07;
+    generateSpheres(radius, 20, 20, node_centers, node_vertices, node_indices);
+    gl_Data gl_vs = initGLData(node_vertices, node_indices, node_centers.front().size());
 
     /* Init edges data */
-    std::vector<float> edges = extractEdgeNodes(path, vertices, gl_vs);
-    edges                    = preprocessEdges(edges, nodes.front().size());
-    gl_Data gl_es = initGLData(edges, nodes.front().size());
+    std::vector<float> edge_vertices;
+    std::vector<unsigned int> edge_indices;
+    preprocessEdges(path, node_centers, edge_vertices, edge_indices);
+    gl_Data gl_es = initGLData(edge_vertices, edge_indices, node_centers.front().size());
 
     /* Callbacks */
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
@@ -484,11 +514,8 @@ int main(int argc, char *argv[])
         glfwPollEvents();
     }
 
-    glDeleteVertexArrays(1, &gl_vs.VAO);
-    glDeleteBuffers(1, &gl_vs.VBO);
-
-    glDeleteVertexArrays(1, &gl_es.VAO);
-    glDeleteBuffers(1, &gl_vs.VBO);
+    clearGLData(gl_vs);
+    clearGLData(gl_es);
 
     cleanOpenGLContext(window);
 
