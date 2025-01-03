@@ -43,4 +43,12 @@ generateSpheres(
     std::vector<unsigned int>& indices
 );
 
+glm::vec3
+mapToSphere(
+    float x,
+    float y,
+    int width,
+    int height
+);
+
 #endif // !GEO_H

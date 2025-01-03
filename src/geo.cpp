@@ -1,14 +1,6 @@
 #include "geo.hpp"
 
 
-glm::vec2
-computeOrthogonal2D(
-    const glm::vec2& dir
-)
-{
-    return glm::vec2(-dir.y, dir.x);
-}
-
 glm::vec3
 computeOrthogonal3D(
     const glm::vec3& dir
@@ -19,36 +11,7 @@ computeOrthogonal3D(
     return glm::normalize(glm::cross(dir, arbitrary));
 }
 
-std::vector<GLfloat>
-generateQuadVertices(
-    const glm::vec2& point1,
-    const glm::vec2& point2,
-    float lineWidth
-)
-{
-    glm::vec2 dir = point2 - point1;
-    dir = glm::normalize(dir);
-
-    glm::vec2 perp = computeOrthogonal2D(dir);
-    glm::vec2 offset = perp * lineWidth * 0.5f;
-
-    std::vector<GLfloat> quadVertices = {
-        // First triangle
-        point1.x - offset.x, point1.y - offset.y,
-        point2.x - offset.x, point2.y - offset.y,
-        point1.x + offset.x, point1.y + offset.y,
-
-        // Second triangle
-        point1.x + offset.x, point1.y + offset.y,
-        point2.x + offset.x, point2.y + offset.y,
-        point2.x - offset.x, point2.y - offset.y
-    };
-
-    return quadVertices;
-}
-
-void
-generatePrisms(
+void generatePrisms(
     const std::vector<float>& edges,
     const float width,
     const float height,
@@ -57,9 +20,9 @@ generatePrisms(
     std::vector<unsigned int>& indices
 )
 {
-    size_t offset = 2 * dim;
+    size_t offset = 2 * dim; // assuming 2 points per edge
     if (edges.size() % offset != 0) {
-        throw std::runtime_error("Invalid edge data: size mismatch.");
+        throw std::runtime_error("invalid edge data: size mismatch.");
     }
 
     unsigned int vertexOffset = 0;
@@ -69,69 +32,81 @@ generatePrisms(
             p1[d] = edges[i + d];
             p2[d] = edges[i + dim + d];
         }
-        glm::vec3 dir = p2 - p1;
 
+        /* direction of the edge */
+        glm::vec3 dir = p2 - p1;
         dir = glm::normalize(dir);
 
+        /* compute orthogonal vectors for the face's width and height */
         glm::vec3 orth1 = computeOrthogonal3D(dir);
         glm::vec3 orth2 = glm::normalize(glm::cross(dir, orth1));
 
-        // Scale orthogonal vectors to form the width and height of the prism
-        glm::vec3 offset1 = orth1 * width  * 0.5f;
+        /* scale orthogonal vectors for width and height */
+        glm::vec3 offset1 = orth1 * width * 0.5f;
         glm::vec3 offset2 = orth2 * height * 0.5f;
 
-        // Front face (centered at point1)
+        /* front face vertices (centered at p1) */
         glm::vec3 frontTopLeft     = p1 + offset1 + offset2;
         glm::vec3 frontTopRight    = p1 - offset1 + offset2;
         glm::vec3 frontBottomLeft  = p1 + offset1 - offset2;
         glm::vec3 frontBottomRight = p1 - offset1 - offset2;
 
-        // Back face (centered at point2)
+        /* back face vertices (centered at p2) */
         glm::vec3 backTopLeft     = p2 + offset1 + offset2;
         glm::vec3 backTopRight    = p2 - offset1 + offset2;
         glm::vec3 backBottomLeft  = p2 + offset1 - offset2;
         glm::vec3 backBottomRight = p2 - offset1 - offset2;
 
+        /* add vertices to the array */
         vertices.insert(vertices.end(), {
-            // Front face
-            frontTopLeft.x   , frontTopLeft.y   , frontTopLeft.z,
-            frontTopRight.x  , frontTopRight.y  , frontTopRight.z,
+            /* front face */
+            frontTopLeft.x, frontTopLeft.y, frontTopLeft.z,
+            frontTopRight.x, frontTopRight.y, frontTopRight.z,
             frontBottomLeft.x, frontBottomLeft.y, frontBottomLeft.z,
             frontBottomRight.x, frontBottomRight.y, frontBottomRight.z,
 
-            // Back face
-            backTopLeft.x   , backTopLeft.y   , backTopLeft.z,
-            backTopRight.x  , backTopRight.y  , backTopRight.z,
+            /* back face */
+            backTopLeft.x, backTopLeft.y, backTopLeft.z,
+            backTopRight.x, backTopRight.y, backTopRight.z,
             backBottomLeft.x, backBottomLeft.y, backBottomLeft.z,
             backBottomRight.x, backBottomRight.y, backBottomRight.z,
         });
 
-        // Front face (vertices 0-3)
-        indices.insert(indices.end(), {vertexOffset + 0,
-                                       vertexOffset + 2,
-                                       vertexOffset + 1,
-                                       vertexOffset + 1,
-                                       vertexOffset + 2,
-                                       vertexOffset + 3});
-        // Back face (vertices 4-7)
-        indices.insert(indices.end(), {vertexOffset + 4,
-                                       vertexOffset + 5,
-                                       vertexOffset + 6,
-                                       vertexOffset + 5,
-                                       vertexOffset + 7,
-                                       vertexOffset + 6});
 
-        // Side faces (connecting front and back vertices)
-        for (int j = 0; j < 4; ++j) {
-            unsigned int front     = vertexOffset + j;               // Current front vertex
-            unsigned int back      = vertexOffset + j + 4;           // Corresponding back vertex
-            unsigned int nextFront = vertexOffset + (j + 1) % 4;     // Next front vertex (wraps around)
-            unsigned int nextBack  = vertexOffset + (j + 1) % 4 + 4; // Corresponding next back vertex
+        /* indices for the front face */
+        indices.insert(indices.end(), {
+            vertexOffset + 0, vertexOffset + 2, vertexOffset + 1,
+            vertexOffset + 1, vertexOffset + 2, vertexOffset + 3
+        });
 
-            indices.insert(indices.end(), {front, back, nextBack});
-            indices.insert(indices.end(), {front, nextBack, nextFront});
-        }
-        vertexOffset += 8;
+        /* indices for the back face */
+        indices.insert(indices.end(), {
+            vertexOffset + 4, vertexOffset + 5, vertexOffset + 6,
+            vertexOffset + 5, vertexOffset + 7, vertexOffset + 6
+        });
+
+        /* side faces (connecting front and back vertices) */
+        indices.insert(indices.end(), {
+            vertexOffset + 0, vertexOffset + 4, vertexOffset + 1,
+            vertexOffset + 1, vertexOffset + 4, vertexOffset + 5
+        });
+
+        indices.insert(indices.end(), {
+            vertexOffset + 1, vertexOffset + 5, vertexOffset + 7,
+            vertexOffset + 1, vertexOffset + 3, vertexOffset + 7
+        });
+
+        indices.insert(indices.end(), {
+            vertexOffset + 2, vertexOffset + 6, vertexOffset + 3,
+            vertexOffset + 3, vertexOffset + 6, vertexOffset + 7
+        });
+
+        indices.insert(indices.end(), {
+            vertexOffset + 0, vertexOffset + 2, vertexOffset + 6,
+            vertexOffset + 6, vertexOffset + 4, vertexOffset + 0
+        });
+
+        vertexOffset += 8;  // 8 vertices per prism (4 for front, 4 for back)
     }
 }
 
@@ -160,8 +135,8 @@ generateSpheres(
 
                 float x = radius * sin(phi) * cos(theta) + center[0];
                 float y = radius * cos(phi) + center[1];
-                float z = radius * sin(phi) * sin(theta) + (dim==3) ? center[2]
-                                                                    : 0.0;
+                float z = radius * sin(phi) * sin(theta) + ((dim==3) ? center[2]
+                                                                     : 0.0);
                 vertices.push_back(x);
                 vertices.push_back(y);
                 vertices.push_back(z);
@@ -184,5 +159,32 @@ generateSpheres(
             }
         }
         vertexOffset += (stacks + 1) * (slices + 1);
+    }
+}
+
+/* Map a 2D vector captured from the mouse position onto half of a unit sphere */
+glm::vec3
+mapToSphere(
+    float x,
+    float y,
+    int width,
+    int height
+)
+{
+    /* Normalize coordinates (-1,1) */
+    float nx = (2.0f * x - width) / width;
+    /* Flip y-axis (-1: bottom, 1: top) */
+    float ny = (height - 2.0f * y) / height;
+
+    float length = nx * nx + ny * ny;
+
+    /* Map to the sphere */
+    if (length > 1.0f) {
+        float norm = 1.0f / std::sqrt(length);
+        return glm::vec3(nx * norm, ny * norm, 0.0f);
+    }
+    else {
+        float z = std::sqrt(1.0f - length);
+        return glm::vec3(nx, ny, z);
     }
 }

@@ -6,15 +6,20 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "geo.hpp"
 #include "utils.hpp"
 
+/* TODO: Not type safe */
 #define WINDOW_WIDTH  600
 #define WINDOW_HEIGHT 600
 
 #define MIN_CANVAS_WIDTH  400
 #define MIN_CANVAS_HEIGHT 400
+
 
 enum ShaderType
 {
@@ -23,25 +28,50 @@ enum ShaderType
     SHADER_COUNT
 };
 
-typedef struct AppState
-{
-    size_t windowWidth    = 600;
-    size_t windowHeight   = 600;
-    size_t minCanvasWidth = 400;
-    size_t minCanvasHeight= 400;
-    GLuint shaderProgs[SHADER_COUNT]={0};
-} AppState;
+typedef struct WindowConfig {
+    size_t windowWidth;
+    size_t windowHeight;
+    size_t minCanvasWidth;
+    size_t minCanvasHeight;
+} WindowConfig;
+
+typedef struct RenderState {
+    GLuint shaderProgs[SHADER_COUNT];
+    float aspectRatio;
+} RenderState;
+
+typedef struct InteractionState {
+    glm::mat4 rotationMatrix = glm::mat4(1.0f);
+    glm::vec3 lastPosOnSphere;
+    bool isDragging = false;
+} InteractionState;
+
+typedef struct AppContext {
+    WindowConfig* windowConfig;
+    RenderState* renderState;
+    InteractionState* interactionState;
+} AppContext;
 
 typedef struct gl_Data
 {
-    GLuint VAO=0;
-    GLuint VBO=0;
-    GLuint EBO=0;
-    size_t count=0;     // Number of vertices
-    size_t vSize=0;     // Total size of flattened vertices data
-    size_t iSize=0;     // Total size of flattened indices data
-    size_t compSize=0;  // Components per vertex (Vec2 or Vec3)
+    GLuint VAO;
+    GLuint VBO;
+    GLuint EBO;
+    size_t count;     // Number of vertices
+    size_t vSize;     // Total size of flattened vertices data
+    size_t iSize;     // Total size of flattened indices data
+    size_t compSize;  // Components per vertex (Vec2 or Vec3)
 } gl_Data;
+
+typedef struct CamParams
+{
+    float fov;
+    float near;
+    float far;
+    glm::vec3 pos;     // Camera position
+    glm::vec3 target;  // Point camera looks at
+    glm::vec3 upAxis;  // World up vector
+} CamParams;
 
 
 void
@@ -67,10 +97,10 @@ framebufferSizeCallback(
     int win_h
 )
 {
-    AppState* state = static_cast<AppState*>(glfwGetWindowUserPointer(window));
+    AppContext* ctx = static_cast<AppContext*>(glfwGetWindowUserPointer(window));
 
-    int draw_w = std::max(win_w, (int)state->minCanvasWidth);
-    int draw_h = std::max(win_h, (int)state->minCanvasHeight);
+    int draw_w = std::max(win_w, (int)ctx->windowConfig->minCanvasWidth);
+    int draw_h = std::max(win_h, (int)ctx->windowConfig->minCanvasHeight);
     int mn = std::min(draw_w, draw_h);
     /* Square drawing window */
     draw_w = mn;
@@ -80,16 +110,73 @@ framebufferSizeCallback(
     int yOff = (win_h - draw_h) * 0.5;
     glViewport(xOff, yOff, draw_w, draw_h);
 
-    // Update the uniform scale factor in the vertex shader
-    float scaleFactor = (mn < (int)state->minCanvasWidth)
-                                    ? 1.0
-                                    : (float)mn / state->minCanvasWidth;
-    GLuint shPg = state->shaderProgs[SHADER_VERTICES];
-    glUseProgram(shPg);
-    GLint scaleUniform = glGetUniformLocation(shPg, "f_ScaleFactor");
-    glUniform1f(scaleUniform, scaleFactor);
+    ctx->renderState->aspectRatio = float(draw_w) / float(draw_h);
 }
 
+/* Mouse button callback */
+void
+mouseButtonCallback(
+    GLFWwindow* window,
+    int button,
+    int action,
+    [[maybe_unused]]int mods
+)
+{
+    AppContext* ctx = static_cast<AppContext*>(glfwGetWindowUserPointer(window));
+    InteractionState* interaction = ctx->interactionState;
+
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (action == GLFW_PRESS) {
+            interaction->isDragging = true;
+
+            // Get cursor position
+            double xpos, ypos;
+            glfwGetCursorPos(window, &xpos, &ypos);
+
+            // Map to sphere
+            int width, height;
+            glfwGetWindowSize(window, &width, &height);
+            interaction->lastPosOnSphere = mapToSphere(xpos, ypos, width, height);
+        }
+        else if (action == GLFW_RELEASE) {
+            interaction->isDragging = false;
+        }
+    }
+}
+
+/* Mouse drag callback */
+void
+cursorPositionCallback(
+    GLFWwindow* window,
+    double xpos,
+    double ypos
+)
+{
+    AppContext* ctx = static_cast<AppContext*>(glfwGetWindowUserPointer(window));
+    InteractionState* interaction = ctx->interactionState;
+
+    if (!interaction->isDragging) return;
+
+    /* Map current mouse position to sphere */
+    int width, height;
+    glfwGetWindowSize(window, &width, &height);
+    glm::vec3 curPos = mapToSphere(xpos, ypos, width, height);
+
+    /* Compute rotation axis */
+    glm::vec3 axis = glm::cross(interaction->lastPosOnSphere, curPos);
+    if (glm::length(axis) > 1e-6) { // Avoid numerical instability
+        axis = glm::normalize(axis);
+
+        float angle = std::acos(glm::clamp(glm::dot(interaction->lastPosOnSphere,
+                                                    curPos),
+                                           -1.0f, 1.0f));
+
+        glm::quat rotation = glm::angleAxis(angle, axis);
+        interaction->rotationMatrix = glm::toMat4(rotation) * interaction->rotationMatrix;
+
+        interaction->lastPosOnSphere = curPos;
+    }
+}
 
 bool
 loadData(
@@ -163,10 +250,6 @@ loadData(
         std::cerr << "ERROR: Number of nodes is empty.\n";
         return false;
     }
-    if (path_dst.empty()) {
-        std::cerr << "ERROR: Path is empty.\n";
-        return false;
-    }
     return true;
 }
 /**
@@ -176,45 +259,42 @@ loadData(
  */
 std::vector<std::vector<float>>
 normNodes(
-    std::vector<std::vector<float>>& nodes,
-    float padding = 0.0
+    std::vector<std::vector<float>>& nodes
 )
 {
     if (nodes.empty())
         return {};
-    const size_t dim = nodes.front().size();
-    constexpr float MIN_PAD = 0.0, MAX_PAD = 0.4;
-    if (padding < MIN_PAD || MAX_PAD < padding) {
-        std::cerr << "Padding exceeds the allowed range [0.0, 0.4]."
-                  << "It will be adjusted to fit within the allowed range.\n";
-        padding = std::clamp(padding, MIN_PAD, MAX_PAD);
-    }
-    using Limits = std::numeric_limits<float>;
-    std::vector<std::pair<float, float>> mn_mx_pairs(dim,
-                                            {Limits::max(), Limits::lowest()});
-    for (auto& x_nd : nodes) {
-        for (size_t i=0; i<dim; ++i) {
-            auto& [mn, mx] = mn_mx_pairs[i];
-            mn = std::min(mn, x_nd[i]);
-            mx = std::max(mx, x_nd[i]);
+
+    size_t dim = nodes.front().size();
+
+    std::vector<float> centroid(dim, 0.0);
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        for (size_t d = 0; d < dim; ++d) {
+            centroid[d] += (nodes[i][d] - centroid[d]) / (i + 1);
         }
     }
-    const float scaleFactor = 2.0f * (1 - 2 * padding);
-    const float offset      = 1.0f - 2 * padding;
+
     std::vector<std::vector<float>> procNodes;
     procNodes.reserve(nodes.size() * dim);
-    for (auto& x_nd : nodes) {
-        std::vector<float> x_nd_n;
-        x_nd.reserve(x_nd.size());
-        for (size_t i=0; i<x_nd.size(); ++i) {
-            auto& [mn, mx] = mn_mx_pairs[i];
-            float nx  = x_nd[i] - mn;
-            if (mx - mn > 0.0f) {
-                nx = nx * scaleFactor / (mx - mn) - offset;
-            }
-            x_nd_n.push_back(nx);
+    float maxDist = 0.0;
+    for (const auto& x_nd : nodes) {
+        float distSqr = 0.0;
+        std::vector<float> x_nd_c;
+        x_nd_c.reserve(x_nd.size());
+        for (size_t d = 0; d < dim; ++d) {
+            x_nd_c.push_back(x_nd[d] - centroid[d]);
+            distSqr += x_nd_c[d] * x_nd_c[d];
         }
-        procNodes.push_back(std::move(x_nd_n));
+        procNodes.push_back(x_nd_c); // Centered point
+        maxDist = std::max(maxDist, std::sqrt(distSqr));
+    }
+
+    if (maxDist > 0.0) {
+        for (auto& x_nd : procNodes) {
+            for (size_t d = 0; d < dim; ++d) {
+                x_nd[d] /= maxDist;
+            }
+        }
     }
     return procNodes;
 }
@@ -225,6 +305,9 @@ extractEdgeNodes(
     const std::vector<std::vector<float>>& centers
 )
 {
+    if (path.empty())
+        return {};
+
     size_t dim = 0;
     if (!centers.empty()) {
         dim = centers.front().size();
@@ -318,30 +401,83 @@ clearGLData(
 }
 
 void
-renderVertices(
-    AppState& appState,
-    gl_Data& gl_vs
+renderNodes(
+    RenderState& state,
+    gl_Data& gl_vs,
+    CamParams& cam,
+    InteractionState& interaction
 )
 {
-    glUseProgram(appState.shaderProgs[SHADER_VERTICES]);
+    glm::mat4 model = glm::mat4(1.0f);
+    /* model = glm::translate(model, glm::vec3(0, 0, -1)); */
+
+    glm::mat4 view = glm::lookAt(cam.pos, cam.target, cam.upAxis);
+
+    glm::mat4 translationToOrigin = glm::translate(glm::mat4(1.0f), -cam.pos); // Move camera to origin
+    glm::mat4 translationBack = glm::translate(glm::mat4(1.0f), cam.pos);     // Move camera back
+
+    view = translationBack * interaction.rotationMatrix * translationToOrigin * view;
+
+    glm::mat4 projection = glm::perspective(glm::radians(cam.fov),
+                                            state.aspectRatio,
+                                            cam.near,
+                                            cam.far);
+
+    GLuint shProg = state.shaderProgs[SHADER_VERTICES];
+    glUseProgram(shProg);
+
+    GLint modelLoc = glGetUniformLocation(shProg, "model");
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+    GLuint viewLoc = glGetUniformLocation(shProg, "view");
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+    GLint projectionLoc = glGetUniformLocation(shProg, "projection");
+    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+
     glBindVertexArray(gl_vs.VAO);
     glDrawElements(GL_TRIANGLES, gl_vs.iSize, GL_UNSIGNED_INT, 0);
 }
 
 void
 renderEdges(
-    AppState& appState,
-    gl_Data& gl_es
+    RenderState& state,
+    gl_Data& gl_es,
+    CamParams& cam,
+    InteractionState& interaction
 )
 {
-    glUseProgram(appState.shaderProgs[SHADER_EDGES]);
+    glm::mat4 model = glm::mat4(1.0f);
+    /* model = glm::translate(model, glm::vec3(0, 0, 1)); */
+
+    glm::mat4 view = glm::lookAt(cam.pos, cam.target, cam.upAxis);
+
+    glm::mat4 translationToOrigin = glm::translate(glm::mat4(1.0f), -cam.pos);
+    glm::mat4 translationBack = glm::translate(glm::mat4(1.0f), cam.pos);
+
+    view = translationBack * interaction.rotationMatrix * translationToOrigin * view;
+
+    glm::mat4 projection = glm::perspective(glm::radians(cam.fov),
+                                            state.aspectRatio,
+                                            cam.near,
+                                            cam.far);
+
+    GLuint shProg = state.shaderProgs[SHADER_EDGES];
+    glUseProgram(shProg);
+
+    GLint modelLoc = glGetUniformLocation(shProg, "model");
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+    GLuint viewLoc = glGetUniformLocation(shProg, "view");
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+    GLint projectionLoc = glGetUniformLocation(shProg, "projection");
+    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+
+    glUseProgram(state.shaderProgs[SHADER_EDGES]);
     glBindVertexArray(gl_es.VAO);
     glDrawElements(GL_TRIANGLES, gl_es.iSize, GL_UNSIGNED_INT, 0);
 }
 
 bool
 initShaders(
-    AppState& appState
+    RenderState& state
 )
 {
     /* Nodes shaders */
@@ -358,7 +494,7 @@ initShaders(
     {
         return false;
     }
-    appState.shaderProgs[SHADER_VERTICES] = shaderProg;
+    state.shaderProgs[SHADER_VERTICES] = shaderProg;
 
     /* Edges shaders */
     GLuint shaderProgLines = glCreateProgram();
@@ -374,7 +510,7 @@ initShaders(
     {
         return false;
     }
-    appState.shaderProgs[SHADER_EDGES] = shaderProgLines;
+    state.shaderProgs[SHADER_EDGES] = shaderProgLines;
 
     return true;
 }
@@ -389,6 +525,7 @@ initOpenGLWindow(void)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    /* glfwWindowHint(GLFW_DEPTH_BITS, 24); */
 
     GLFWwindow* window = glfwCreateWindow(WINDOW_WIDTH,
                                           WINDOW_HEIGHT,
@@ -402,6 +539,11 @@ initOpenGLWindow(void)
 
     glfwMakeContextCurrent(window);
     glEnable(GL_PROGRAM_POINT_SIZE);
+    /* glEnable(GL_CULL_FACE); */
+    /* glFrontFace(GL_CW); // Front face are counter-clock wise formed */
+    /* glDisable(GL_CULL_FACE); */
+    glEnable(GL_DEPTH_TEST);
+    /* glDepthFunc(GL_LESS); */
 
     if(glewInit() != GLEW_OK) {
         std::cerr << "Failed to initialize GLEW" << '\n';
@@ -457,11 +599,28 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    AppState appState = {
-            .windowWidth=WINDOW_WIDTH,
-            .windowHeight=WINDOW_HEIGHT,
-            .minCanvasWidth=MIN_CANVAS_WIDTH,
-            .minCanvasHeight=MIN_CANVAS_HEIGHT,
+    WindowConfig windowConfig = {
+        .windowWidth     = WINDOW_WIDTH,
+        .windowHeight    = WINDOW_HEIGHT,
+        .minCanvasWidth  = MIN_CANVAS_WIDTH,
+        .minCanvasHeight = MIN_CANVAS_HEIGHT,
+    };
+
+    RenderState renderState = {
+        .shaderProgs = {0},
+        .aspectRatio = 1.0,
+    };
+
+    InteractionState interaction = {
+        .rotationMatrix = glm::mat4(1.0),
+        .lastPosOnSphere = glm::vec3(0.0),
+        .isDragging = false,
+    };
+
+    AppContext appContext = {
+        .windowConfig = &windowConfig,
+        .renderState = &renderState,
+        .interactionState = &interaction,
     };
 
     GLFWwindow* window = initOpenGLWindow();
@@ -473,42 +632,57 @@ int main(int argc, char *argv[])
     const GLubyte* version = glGetString(GL_VERSION);
     std::cout << "OpenGL Version: " << version << '\n';
 
-    glfwSetWindowUserPointer(window, &appState);
+    glfwSetWindowUserPointer(window, &appContext);
 
-    if (!initShaders(appState)) {
+    if (!initShaders(renderState)) {
         cleanOpenGLContext(window);
         return -1;
     }
 
     /* Init nodes data */
-    node_centers = normNodes(node_centers, 0.1);
+    node_centers = normNodes(node_centers);
     std::vector<float> node_vertices;
     std::vector<unsigned int> node_indices;
     float radius=0.07;
     generateSpheres(radius, 20, 20, node_centers, node_vertices, node_indices);
-    gl_Data gl_vs = initGLData(node_vertices, node_indices, node_centers.front().size());
+    gl_Data gl_vs = initGLData(node_vertices, node_indices, 3);
 
     /* Init edges data */
     std::vector<float> edge_vertices;
     std::vector<unsigned int> edge_indices;
     preprocessEdges(path, node_centers, edge_vertices, edge_indices);
-    gl_Data gl_es = initGLData(edge_vertices, edge_indices, node_centers.front().size());
+    gl_Data gl_es = initGLData(edge_vertices, edge_indices, 3);
 
     /* Callbacks */
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
     glfwSetKeyCallback(window, keyCallback);
+    glfwSetMouseButtonCallback(window, mouseButtonCallback);
+    glfwSetCursorPosCallback(window, cursorPositionCallback);
 
     /* Call the resize window callback at least once */
     int win_w, win_h;
     glfwGetFramebufferSize(window, &win_w, &win_h);
     framebufferSizeCallback(window, win_w, win_h);
 
+    /* Init camera */
+    CamParams cam = {
+        .fov  = 90.0,
+        .near = 0.1,
+        .far  = 10.0,
+        .pos    = glm::vec3(0.0, 0.0, -2.0), // Camera position
+        .target = glm::vec3(0.0, 0.0, 0.0),  // Point camera looks at
+        .upAxis = glm::vec3(0.0, 1.0, 0.0)  // World up vector
+    };
+
+    /* Background color */
+    glClearColor(0.2, 0.3, 0.3, 1.0);
+
     /* Rendering loop */
     while (!glfwWindowShouldClose(window)) {
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        renderVertices(appState, gl_vs);
-        renderEdges(appState, gl_es);
+        renderEdges(renderState, gl_es, cam, interaction);
+        renderNodes(renderState, gl_vs, cam, interaction);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
