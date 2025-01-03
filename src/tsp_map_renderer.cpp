@@ -23,8 +23,8 @@
 
 enum ShaderType
 {
-    SHADER_VERTICES,
-    SHADER_EDGES,
+    NODES_SHADER,
+    EDGES_SHADER,
     SHADER_COUNT
 };
 
@@ -423,7 +423,7 @@ renderNodes(
                                             cam.near,
                                             cam.far);
 
-    GLuint shProg = state.shaderProgs[SHADER_VERTICES];
+    GLuint shProg = state.shaderProgs[NODES_SHADER];
     glUseProgram(shProg);
 
     GLint modelLoc = glGetUniformLocation(shProg, "model");
@@ -460,7 +460,7 @@ renderEdges(
                                             cam.near,
                                             cam.far);
 
-    GLuint shProg = state.shaderProgs[SHADER_EDGES];
+    GLuint shProg = state.shaderProgs[EDGES_SHADER];
     glUseProgram(shProg);
 
     GLint modelLoc = glGetUniformLocation(shProg, "model");
@@ -470,7 +470,6 @@ renderEdges(
     GLint projectionLoc = glGetUniformLocation(shProg, "projection");
     glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
-    glUseProgram(state.shaderProgs[SHADER_EDGES]);
     glBindVertexArray(gl_es.VAO);
     glDrawElements(GL_TRIANGLES, gl_es.iSize, GL_UNSIGNED_INT, 0);
 }
@@ -494,7 +493,7 @@ initShaders(
     {
         return false;
     }
-    state.shaderProgs[SHADER_VERTICES] = shaderProg;
+    state.shaderProgs[NODES_SHADER] = shaderProg;
 
     /* Edges shaders */
     GLuint shaderProgLines = glCreateProgram();
@@ -510,13 +509,15 @@ initShaders(
     {
         return false;
     }
-    state.shaderProgs[SHADER_EDGES] = shaderProgLines;
+    state.shaderProgs[EDGES_SHADER] = shaderProgLines;
 
     return true;
 }
 
 GLFWwindow*
-initOpenGLWindow(void)
+initOpenGLWindow(
+    WindowConfig& windowConfig
+)
 {
     if(!glfwInit()) {
         return nullptr;
@@ -527,8 +528,8 @@ initOpenGLWindow(void)
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     /* glfwWindowHint(GLFW_DEPTH_BITS, 24); */
 
-    GLFWwindow* window = glfwCreateWindow(WINDOW_WIDTH,
-                                          WINDOW_HEIGHT,
+    GLFWwindow* window = glfwCreateWindow(windowConfig.windowWidth,
+                                          windowConfig.windowHeight,
                                           "TSL Path Map",
                                           NULL,
                                           NULL);
@@ -623,7 +624,7 @@ int main(int argc, char *argv[])
         .interactionState = &interaction,
     };
 
-    GLFWwindow* window = initOpenGLWindow();
+    GLFWwindow* window = initOpenGLWindow(windowConfig);
     if (!window) {
         cleanOpenGLContext(window);
         return -1;
