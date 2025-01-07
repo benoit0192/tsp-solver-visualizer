@@ -30,6 +30,7 @@ generatePrisms(
     const float height,
     const size_t dim,
     std::vector<float>& vertices,
+    std::vector<float>& normals,
     std::vector<unsigned int>& indices
 );
 
@@ -40,6 +41,7 @@ generateSpheres(
     int slices,
     const std::vector<std::vector<float>>& centers,
     std::vector<float>& vertices,
+    std::vector<float>& normals,
     std::vector<unsigned int>& indices
 );
 

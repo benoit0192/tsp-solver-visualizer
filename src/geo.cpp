@@ -17,6 +17,7 @@ void generatePrisms(
     const float height,
     const size_t dim,
     std::vector<float>& vertices,
+    std::vector<float>& normals,
     std::vector<unsigned int>& indices
 )
 {
@@ -57,56 +58,80 @@ void generatePrisms(
         glm::vec3 backBottomLeft  = p2 + offset1 - offset2;
         glm::vec3 backBottomRight = p2 - offset1 - offset2;
 
-        /* add vertices to the array */
-        vertices.insert(vertices.end(), {
-            /* front face */
-            frontTopLeft.x, frontTopLeft.y, frontTopLeft.z,
-            frontTopRight.x, frontTopRight.y, frontTopRight.z,
-            frontBottomLeft.x, frontBottomLeft.y, frontBottomLeft.z,
-            frontBottomRight.x, frontBottomRight.y, frontBottomRight.z,
+        std::vector<glm::vec3> prismVertices = {
+            /* Front face vertices */
+            frontTopLeft, frontTopRight, frontBottomLeft, frontBottomRight,     // 0,1,2,3
+            /* Back face vertices */
+            backTopLeft, backTopRight, backBottomLeft, backBottomRight,         // 4,5,6,7
+            /* Left face vertices */
+            backTopLeft, frontTopLeft, backBottomLeft, frontBottomLeft,         // 8,9,10,11
+            /* Right face vertices */
+            frontTopRight, backTopRight, frontBottomRight, backBottomRight,     // 12,13,14,15
+            /* Top face vertices */
+            backTopLeft, backTopRight, frontTopLeft, frontTopRight,             // 16,17,18,19
+            /* Bottom face vertices */
+            frontBottomLeft, frontBottomRight, backBottomLeft, backBottomRight, // 20,21,22,23
+        };
 
-            /* back face */
-            backTopLeft.x, backTopLeft.y, backTopLeft.z,
-            backTopRight.x, backTopRight.y, backTopRight.z,
-            backBottomLeft.x, backBottomLeft.y, backBottomLeft.z,
-            backBottomRight.x, backBottomRight.y, backBottomRight.z,
-        });
+        /* Add vertices to the array */
+        for (const auto& v : prismVertices) {
+            vertices.insert(vertices.end(), { v.x, v.y, v.z });
+        }
 
+        /* Face normals */
+        glm::vec3 frontNormal = glm::normalize(glm::cross(frontTopRight - frontTopLeft,
+                                                          frontBottomLeft - frontTopLeft));
+        glm::vec3 backNormal = glm::normalize(glm::cross(backBottomLeft - backTopLeft,
+                                                         backTopRight - backTopLeft));
+        glm::vec3 leftNormal = glm::normalize(glm::cross(frontBottomLeft - frontTopLeft,
+                                                         backTopLeft - frontTopLeft));
+        glm::vec3 rightNormal = glm::normalize(glm::cross(backTopRight - frontTopRight,
+                                                          frontBottomRight - frontTopRight));
+        glm::vec3 topNormal = glm::normalize(glm::cross(frontTopLeft - backTopLeft,
+                                                        backTopRight - backTopLeft));
+        glm::vec3 bottomNormal = glm::normalize(glm::cross(backBottomLeft - backTopLeft,
+                                                           frontBottomLeft - backTopLeft));
 
-        /* indices for the front face */
+        std::vector<glm::vec3> faceNormals = {
+            frontNormal, backNormal,
+            leftNormal, rightNormal,
+            topNormal, bottomNormal
+        };
+
+        for (size_t i = 0; i < 6; ++i) { // Loop over the 6 faces
+            const glm::vec3& normal = faceNormals[i];
+            for (size_t j = 0; j < 4; ++j) { // Each face has 4 vertices
+                normals.insert(normals.end(), { normal.x, normal.y, normal.z });
+            }
+        }
+
         indices.insert(indices.end(), {
+            /* indices for the front face */
             vertexOffset + 0, vertexOffset + 2, vertexOffset + 1,
-            vertexOffset + 1, vertexOffset + 2, vertexOffset + 3
-        });
+            vertexOffset + 1, vertexOffset + 2, vertexOffset + 3,
 
-        /* indices for the back face */
-        indices.insert(indices.end(), {
+            /* indices for the back face */
             vertexOffset + 4, vertexOffset + 5, vertexOffset + 6,
-            vertexOffset + 5, vertexOffset + 7, vertexOffset + 6
+            vertexOffset + 5, vertexOffset + 7, vertexOffset + 6,
+
+            /* indices for the left face */
+            vertexOffset + 8, vertexOffset + 10, vertexOffset + 9,
+            vertexOffset + 9, vertexOffset + 10, vertexOffset + 11,
+
+            /* indices for the right face */
+            vertexOffset + 12, vertexOffset + 14, vertexOffset + 13,
+            vertexOffset + 13, vertexOffset + 14, vertexOffset + 15,
+
+            /* indices for the top face */
+            vertexOffset + 16, vertexOffset + 18, vertexOffset + 17,
+            vertexOffset + 17, vertexOffset + 18, vertexOffset + 19,
+
+            /* indices for the bottom face */
+            vertexOffset + 20, vertexOffset + 22, vertexOffset + 21,
+            vertexOffset + 21, vertexOffset + 22, vertexOffset + 23
         });
 
-        /* side faces (connecting front and back vertices) */
-        indices.insert(indices.end(), {
-            vertexOffset + 0, vertexOffset + 4, vertexOffset + 1,
-            vertexOffset + 1, vertexOffset + 4, vertexOffset + 5
-        });
-
-        indices.insert(indices.end(), {
-            vertexOffset + 1, vertexOffset + 5, vertexOffset + 7,
-            vertexOffset + 1, vertexOffset + 3, vertexOffset + 7
-        });
-
-        indices.insert(indices.end(), {
-            vertexOffset + 2, vertexOffset + 6, vertexOffset + 3,
-            vertexOffset + 3, vertexOffset + 6, vertexOffset + 7
-        });
-
-        indices.insert(indices.end(), {
-            vertexOffset + 0, vertexOffset + 2, vertexOffset + 6,
-            vertexOffset + 6, vertexOffset + 4, vertexOffset + 0
-        });
-
-        vertexOffset += 8;  // 8 vertices per prism (4 for front, 4 for back)
+        vertexOffset += 24;  // 24 vertices per prism (4 for each face)
     }
 }
 
@@ -117,6 +142,7 @@ generateSpheres(
     int slices,
     const std::vector<std::vector<float>>& centers,
     std::vector<float>& vertices,
+    std::vector<float>& normals,
     std::vector<unsigned int>& indices
 )
 {
@@ -125,6 +151,7 @@ generateSpheres(
         dim = centers.front().size();
     }
     vertices.reserve(centers.size() * (stacks + 1) * (slices + 1) * 3);
+    normals.reserve(centers.size() * (stacks + 1) * (slices + 1) * 3);
     indices.reserve(centers.size() * stacks * slices * 2 * 3);
     unsigned int vertexOffset = 0;
     for (const auto& center : centers) {
@@ -133,13 +160,21 @@ generateSpheres(
             for (int j = 0; j <= slices; ++j) {
                 float theta = 2.0f * M_PI * j / slices;
 
-                float x = radius * sin(phi) * cos(theta) + center[0];
-                float y = radius * cos(phi) + center[1];
-                float z = radius * sin(phi) * sin(theta) + ((dim==3) ? center[2]
-                                                                     : 0.0);
+                float nx = sin(phi) * cos(theta);
+                float ny = cos(phi);
+                float nz = sin(phi) * sin(theta);
+
+                float x = radius * nx + center[0];
+                float y = radius * ny + center[1];
+                float z = radius * nz + ((dim==3) ? center[2] : 0.0);
+
                 vertices.push_back(x);
                 vertices.push_back(y);
                 vertices.push_back(z);
+
+                normals.push_back(nx);
+                normals.push_back(ny);
+                normals.push_back(nz);
             }
         }
 
@@ -150,12 +185,12 @@ generateSpheres(
 
                 // Two triangles for the current quad
                 indices.push_back(first);
-                indices.push_back(second);
                 indices.push_back(first + 1);
+                indices.push_back(second);
 
                 indices.push_back(second);
-                indices.push_back(second + 1);
                 indices.push_back(first + 1);
+                indices.push_back(second + 1);
             }
         }
         vertexOffset += (stacks + 1) * (slices + 1);

@@ -43,12 +43,13 @@ typedef struct RenderState {
 typedef struct gl_Data
 {
     GLuint VAO;
-    GLuint VBO;
-    GLuint EBO;
-    size_t count;     // Number of vertices
-    size_t vSize;     // Total size of flattened vertices data
-    size_t iSize;     // Total size of flattened indices data
-    size_t compSize;  // Components per vertex (Vec2 or Vec3)
+    GLuint VBO;         // Vertices buffer
+    GLuint NBO;         // Normals buffer
+    GLuint EBO;         // Indices buffer
+    size_t count;       // Number of vertices
+    size_t vSize;       // Total size of flattened vertices data
+    size_t iSize;       // Total size of flattened indices data
+    size_t compSize;    // Components per vertex (Vec2 or Vec3)
 } gl_Data;
 
 typedef struct CamParams
@@ -371,6 +372,7 @@ preprocessEdges(
     const std::vector<int>& path,
     const std::vector<std::vector<float>>& node_centers,
     std::vector<float>& edge_vertices,
+    std::vector<float>& edge_normals,
     std::vector<unsigned int>& edge_indices
 )
 {
@@ -381,12 +383,14 @@ preprocessEdges(
         dim = node_centers.front().size();
     }
     const float width = 0.05;
-    generatePrisms(edges, width, width, dim, edge_vertices, edge_indices);
+    generatePrisms(edges, width, width, dim,
+                   edge_vertices, edge_normals, edge_indices);
 }
 
 gl_Data
 initGLData(
     const std::vector<GLfloat>& vertices,
+    const std::vector<GLfloat>& normals,
     const std::vector<GLuint>& indices,
     size_t compSize
 )
@@ -401,18 +405,12 @@ initGLData(
     glGenVertexArrays(1, &gl_data.VAO);
     glBindVertexArray(gl_data.VAO);
 
+    /* Vertex Buffer Object (VBO) */
     glGenBuffers(1, &gl_data.VBO);
     glBindBuffer(GL_ARRAY_BUFFER, gl_data.VBO);
     glBufferData(GL_ARRAY_BUFFER,
                  vertices.size() * sizeof(GLfloat),
                  vertices.data(),
-                 GL_STATIC_DRAW);
-
-    glGenBuffers(1, &gl_data.EBO);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl_data.EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                 indices.size() * sizeof(GLuint),
-                 indices.data(),
                  GL_STATIC_DRAW);
 
     glVertexAttribPointer(0,
@@ -422,6 +420,30 @@ initGLData(
                           compSize * sizeof(GL_FLOAT),
                           (GLvoid*)0);
     glEnableVertexAttribArray(0);
+
+    /* Normal Buffer Object (NBO) */
+    glGenBuffers(1, &gl_data.NBO);
+    glBindBuffer(GL_ARRAY_BUFFER, gl_data.NBO);
+    glBufferData(GL_ARRAY_BUFFER,
+                 normals.size() * sizeof(GLfloat),
+                 normals.data(),
+                 GL_STATIC_DRAW);
+
+    glVertexAttribPointer(1,
+            compSize,
+            GL_FLOAT,
+            GL_FALSE,
+            compSize * sizeof(GL_FLOAT),
+            (GLvoid*)0);
+    glEnableVertexAttribArray(1);
+
+    /* Element Buffer Object (EBO) */
+    glGenBuffers(1, &gl_data.EBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl_data.EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                 indices.size() * sizeof(GLuint),
+                 indices.data(),
+                 GL_STATIC_DRAW);
 
     glBindVertexArray(0);
 
@@ -578,10 +600,11 @@ initOpenGLWindow(
     }
 
     glfwMakeContextCurrent(window);
-    glEnable(GL_PROGRAM_POINT_SIZE);
-    /* glEnable(GL_CULL_FACE); */
-    /* glFrontFace(GL_CW); // Front face are counter-clock wise formed */
+
+    glEnable(GL_CULL_FACE);
+    glFrontFace(GL_CCW); // Front face are counter-clock wise formed
     /* glDisable(GL_CULL_FACE); */
+
     glEnable(GL_DEPTH_TEST);
     /* glDepthFunc(GL_LESS); */
 
@@ -695,17 +718,22 @@ int main(int argc, char *argv[])
 
     /* Init nodes data */
     node_centers = normNodes(node_centers);
-    std::vector<float> node_vertices;
+    std::vector<float> node_vertices, node_normals;
     std::vector<unsigned int> node_indices;
-    float radius=0.07;
-    generateSpheres(radius, 20, 20, node_centers, node_vertices, node_indices);
-    gl_Data gl_vs = initGLData(node_vertices, node_indices, 3);
+    struct SphereParams {
+        float radius=0.07;
+        int stacks=20;
+        int slices=20;
+    } sphereParams;
+    generateSpheres(sphereParams.radius, sphereParams.stacks, sphereParams.slices,
+                    node_centers, node_vertices, node_normals, node_indices);
+    gl_Data gl_vs = initGLData(node_vertices, node_normals, node_indices, 3);
 
     /* Init edges data */
-    std::vector<float> edge_vertices;
+    std::vector<float> edge_vertices, edge_normals;
     std::vector<unsigned int> edge_indices;
-    preprocessEdges(path, node_centers, edge_vertices, edge_indices);
-    gl_Data gl_es = initGLData(edge_vertices, edge_indices, 3);
+    preprocessEdges(path, node_centers, edge_vertices, edge_normals, edge_indices);
+    gl_Data gl_es = initGLData(edge_vertices, edge_normals, edge_indices, 3);
 
     /* Callbacks */
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
