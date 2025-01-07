@@ -40,18 +40,6 @@ typedef struct RenderState {
     float aspectRatio;
 } RenderState;
 
-typedef struct InteractionState {
-    glm::mat4 rotationMatrix = glm::mat4(1.0f);
-    glm::vec3 lastPosOnSphere;
-    bool isDragging = false;
-} InteractionState;
-
-typedef struct AppContext {
-    WindowConfig* windowConfig;
-    RenderState* renderState;
-    InteractionState* interactionState;
-} AppContext;
-
 typedef struct gl_Data
 {
     GLuint VAO;
@@ -72,6 +60,22 @@ typedef struct CamParams
     glm::vec3 target;  // Point camera looks at
     glm::vec3 upAxis;  // World up vector
 } CamParams;
+
+typedef struct InteractionState {
+    glm::mat4 rotationMatrix;
+    glm::vec3 lastPosOnSphere;
+    bool isDragging;
+    float zoomSpeed;
+    CamParams* camParams;
+    float maxCamDist;
+    float minCamDist;
+} InteractionState;
+
+typedef struct AppContext {
+    WindowConfig* windowConfig;
+    RenderState* renderState;
+    InteractionState* interactionState;
+} AppContext;
 
 
 void
@@ -129,11 +133,10 @@ mouseButtonCallback(
         if (action == GLFW_PRESS) {
             interaction->isDragging = true;
 
-            // Get cursor position
             double xpos, ypos;
             glfwGetCursorPos(window, &xpos, &ypos);
 
-            // Map to sphere
+            /* Map to sphere */
             int width, height;
             glfwGetWindowSize(window, &width, &height);
             interaction->lastPosOnSphere = mapToSphere(xpos, ypos, width, height);
@@ -175,6 +178,41 @@ cursorPositionCallback(
         interaction->rotationMatrix = glm::toMat4(rotation) * interaction->rotationMatrix;
 
         interaction->lastPosOnSphere = curPos;
+    }
+}
+
+/* Mouse scroll callback */
+void
+scrollCallback(
+    GLFWwindow* window,
+    [[maybe_unused]] double xOffset,
+    double yOffset
+)
+{
+    AppContext* ctx = static_cast<AppContext*>(glfwGetWindowUserPointer(window));
+    InteractionState* interaction = ctx->interactionState;
+    CamParams* cam = interaction->camParams;
+
+    glm::vec3 zoomDirection = glm::normalize(cam->target - cam->pos);
+
+    /* Update camera position */
+    if (yOffset > 0) {
+        cam->pos += zoomDirection * interaction->zoomSpeed;
+    }
+    else {
+        cam->pos -= zoomDirection * interaction->zoomSpeed;
+    }
+
+    float distance = glm::length(cam->pos - cam->target);
+    float maxCamDist = interaction->maxCamDist;
+    float minCamDist = interaction->minCamDist;
+
+    /* Clip camera position */
+    if (distance > maxCamDist) {
+        cam->pos = cam->target - zoomDirection * maxCamDist;
+    }
+    else if (distance < minCamDist) {
+        cam->pos = cam->target - zoomDirection * minCamDist;
     }
 }
 
@@ -408,7 +446,7 @@ renderNodes(
     InteractionState& interaction
 )
 {
-    glm::mat4 model = glm::mat4(1.0f);
+    glm::mat4 model = glm::mat4(1.0);
     /* model = glm::translate(model, glm::vec3(0, 0, -1)); */
 
     glm::mat4 view = glm::lookAt(cam.pos, cam.target, cam.upAxis);
@@ -471,6 +509,7 @@ renderEdges(
     glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
     glBindVertexArray(gl_es.VAO);
+
     glDrawElements(GL_TRIANGLES, gl_es.iSize, GL_UNSIGNED_INT, 0);
 }
 
@@ -612,10 +651,24 @@ int main(int argc, char *argv[])
         .aspectRatio = 1.0,
     };
 
+    /* Init camera */
+    CamParams cam = {
+        .fov  = 90.0,
+        .near = 0.1,
+        .far  = 10.0,
+        .pos    = glm::vec3(0.0, 0.0, -2.0), // Camera position
+        .target = glm::vec3(0.0, 0.0, 0.0),  // Point camera looks at
+        .upAxis = glm::vec3(0.0, 1.0, 0.0)   // World up vector
+    };
+
     InteractionState interaction = {
         .rotationMatrix = glm::mat4(1.0),
         .lastPosOnSphere = glm::vec3(0.0),
         .isDragging = false,
+        .zoomSpeed = 0.1,
+        .camParams = &cam,
+        .maxCamDist = 2.0,
+        .minCamDist = 0.1,
     };
 
     AppContext appContext = {
@@ -659,21 +712,12 @@ int main(int argc, char *argv[])
     glfwSetKeyCallback(window, keyCallback);
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetCursorPosCallback(window, cursorPositionCallback);
+    glfwSetScrollCallback(window, scrollCallback);
 
     /* Call the resize window callback at least once */
     int win_w, win_h;
     glfwGetFramebufferSize(window, &win_w, &win_h);
     framebufferSizeCallback(window, win_w, win_h);
-
-    /* Init camera */
-    CamParams cam = {
-        .fov  = 90.0,
-        .near = 0.1,
-        .far  = 10.0,
-        .pos    = glm::vec3(0.0, 0.0, -2.0), // Camera position
-        .target = glm::vec3(0.0, 0.0, 0.0),  // Point camera looks at
-        .upAxis = glm::vec3(0.0, 1.0, 0.0)  // World up vector
-    };
 
     /* Background color */
     glClearColor(0.2, 0.3, 0.3, 1.0);
