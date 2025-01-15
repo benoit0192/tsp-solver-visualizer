@@ -32,8 +32,6 @@ enum ShaderType
 typedef struct WindowConfig {
     size_t windowWidth;
     size_t windowHeight;
-    size_t minCanvasWidth;
-    size_t minCanvasHeight;
 } WindowConfig;
 
 typedef struct RenderState {
@@ -116,19 +114,8 @@ framebufferSizeCallback(
 )
 {
     AppContext* ctx = static_cast<AppContext*>(glfwGetWindowUserPointer(window));
-
-    int draw_w = std::max(win_w, (int)ctx->windowConfig->minCanvasWidth);
-    int draw_h = std::max(win_h, (int)ctx->windowConfig->minCanvasHeight);
-    int mn = std::min(draw_w, draw_h);
-    /* Square drawing window */
-    draw_w = mn;
-    draw_h = mn;
-    /* Drawing window centering */
-    int xOff = (win_w - draw_w) * 0.5;
-    int yOff = (win_h - draw_h) * 0.5;
-    glViewport(xOff, yOff, draw_w, draw_h);
-
-    ctx->renderState->aspectRatio = float(draw_w) / float(draw_h);
+    glViewport(0, 0, win_w, win_h);
+    ctx->renderState->aspectRatio = float(win_w) / float(win_h);
 }
 
 /* Mouse button callback */
@@ -700,10 +687,8 @@ int main(int argc, char *argv[])
     }
 
     WindowConfig windowConfig = {
-        .windowWidth     = WINDOW_WIDTH,
-        .windowHeight    = WINDOW_HEIGHT,
-        .minCanvasWidth  = MIN_CANVAS_WIDTH,
-        .minCanvasHeight = MIN_CANVAS_HEIGHT,
+        .windowWidth     = 600,
+        .windowHeight    = 600,
     };
 
     RenderState renderState = {
