@@ -14,13 +14,6 @@
 #include "geo.hpp"
 #include "utils.hpp"
 
-/* TODO: Not type safe */
-#define WINDOW_WIDTH  600
-#define WINDOW_HEIGHT 600
-
-#define MIN_CANVAS_WIDTH  400
-#define MIN_CANVAS_HEIGHT 400
-
 
 enum ShaderType
 {
@@ -253,7 +246,7 @@ loadData(
     size_t curLineNum=1;
     while (std::getline(inFile, line)) {
         if (line.starts_with('#')) {
-            //Do nothing
+            /* Do nothing */
         }
         /* Decode nodes */
         else if (line.contains(':')) {
@@ -312,8 +305,7 @@ loadData(
 }
 /**
  * This function processes a set of nodes represented as vectors of floats.
- * It normalizes each node's components to a [-1, 1] range while applying
- * an optional padding to shrink the range.
+ * It normalizes each node's components to a [-1, 1] range.
  */
 std::vector<std::vector<float>>
 normNodes(
@@ -325,7 +317,7 @@ normNodes(
 
     size_t dim = nodes.front().size();
 
-    std::vector<float> centroid(dim, 0.0);
+    std::vector<float> centroid(dim, 0.0f);
     for (size_t i = 0; i < nodes.size(); ++i) {
         for (size_t d = 0; d < dim; ++d) {
             centroid[d] += (nodes[i][d] - centroid[d]) / (i + 1);
@@ -347,7 +339,7 @@ normNodes(
         maxDist = std::max(maxDist, std::sqrt(distSqr));
     }
 
-    if (maxDist > 0.0) {
+    if (maxDist > 0.0f) {
         for (auto& x_nd : procNodes) {
             for (size_t d = 0; d < dim; ++d) {
                 x_nd[d] /= maxDist;
@@ -697,17 +689,17 @@ int main(int argc, char *argv[])
 
     RenderState renderState = {
         .shaderProgs = {0},
-        .aspectRatio = 1.0,
+        .aspectRatio = 1.0f,
     };
 
     /* Init camera */
     CamParams cam = {
-        .fov  = 90.0,
-        .near = 0.1,
-        .far  = 10.0,
-        .pos    = glm::vec3(0.0, 0.0, -2.0), // Camera position
-        .target = glm::vec3(0.0, 0.0, 0.0),  // Point camera looks at
-        .upAxis = glm::vec3(0.0, 1.0, 0.0)   // World up vector
+        .fov  = 90.0f,
+        .near = 0.01f,
+        .far  = 10.0f,
+        .pos    = glm::vec3(0.0f, 0.0f, -2.0f), // Camera position
+        .target = glm::vec3(0.0f, 0.0f, 0.0f),  // Point camera looks at
+        .upAxis = glm::vec3(0.0f, 1.0f, 0.0f)   // World up vector
     };
 
     InteractionState interaction = {
