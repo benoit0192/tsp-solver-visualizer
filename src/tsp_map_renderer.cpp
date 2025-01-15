@@ -483,6 +483,29 @@ clearGLData(
 }
 
 void
+getCameraMatrices(
+    RenderState& state,
+    CamParams& cam,
+    InteractionState& interaction,
+    glm::mat4& view,
+    glm::mat4& projection
+)
+{
+    /* World to camera transform */
+    view = glm::lookAt(cam.pos, cam.target, cam.upAxis);
+
+    glm::mat4 translationToOrigin = glm::translate(glm::mat4(1.0f), -cam.pos);
+    glm::mat4 translationBack     = glm::translate(glm::mat4(1.0f), cam.pos);
+    /* Apply the rotation relative to the world origin */
+    view = translationBack * interaction.rotationMatrix * translationToOrigin * view;
+
+    projection = glm::perspective(glm::radians(cam.fov),
+                                  state.aspectRatio,
+                                  cam.near,
+                                  cam.far);
+}
+
+void
 renderNodes(
     RenderState& state,
     gl_Data& gl_vs,
@@ -490,20 +513,10 @@ renderNodes(
     InteractionState& interaction
 )
 {
-    glm::mat4 model = glm::mat4(1.0);
-    /* model = glm::translate(model, glm::vec3(0, 0, -1)); */
+    glm::mat4 model = glm::mat4(1.0f);
 
-    glm::mat4 view = glm::lookAt(cam.pos, cam.target, cam.upAxis);
-
-    glm::mat4 translationToOrigin = glm::translate(glm::mat4(1.0f), -cam.pos); // Move camera to origin
-    glm::mat4 translationBack = glm::translate(glm::mat4(1.0f), cam.pos);     // Move camera back
-
-    view = translationBack * interaction.rotationMatrix * translationToOrigin * view;
-
-    glm::mat4 projection = glm::perspective(glm::radians(cam.fov),
-                                            state.aspectRatio,
-                                            cam.near,
-                                            cam.far);
+    glm::mat4 view, projection;
+    getCameraMatrices(state, cam, interaction, view, projection);
 
     GLuint shProg = state.shaderProgs[NODES_SHADER];
     glUseProgram(shProg);
@@ -529,20 +542,11 @@ renderEdges(
     InteractionState& interaction
 )
 {
+    /* Object to world transform */
     glm::mat4 model = glm::mat4(1.0f);
-    /* model = glm::translate(model, glm::vec3(0, 0, 1)); */
 
-    glm::mat4 view = glm::lookAt(cam.pos, cam.target, cam.upAxis);
-
-    glm::mat4 translationToOrigin = glm::translate(glm::mat4(1.0f), -cam.pos);
-    glm::mat4 translationBack = glm::translate(glm::mat4(1.0f), cam.pos);
-
-    view = translationBack * interaction.rotationMatrix * translationToOrigin * view;
-
-    glm::mat4 projection = glm::perspective(glm::radians(cam.fov),
-                                            state.aspectRatio,
-                                            cam.near,
-                                            cam.far);
+    glm::mat4 view, projection;
+    getCameraMatrices(state, cam, interaction, view, projection);
 
     GLuint shProg = state.shaderProgs[EDGES_SHADER];
     glUseProgram(shProg);
