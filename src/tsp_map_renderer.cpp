@@ -506,6 +506,8 @@ renderNodes(
     glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
     GLint projectionLoc = glGetUniformLocation(shProg, "projection");
     glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+    GLint camPosLoc = glGetUniformLocation(shProg, "camPos");
+    glUniform3fv(camPosLoc, 1, glm::value_ptr(cam.pos));
 
     glBindVertexArray(gl_vs.VAO);
     glDrawElements(GL_TRIANGLES, gl_vs.iSize, GL_UNSIGNED_INT, 0);
