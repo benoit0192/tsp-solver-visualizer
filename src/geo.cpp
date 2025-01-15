@@ -13,19 +13,52 @@ computeOrthogonal3D(
 
 void generatePrisms(
     const std::vector<float>& edges,
+    const size_t dim,
     const float width,
     const float height,
-    const size_t dim,
+    const int numEdgeSamples,
+    const float jointRadius,
     std::vector<float>& vertices,
     std::vector<float>& normals,
     std::vector<unsigned int>& indices
 )
 {
-    size_t offset = 2 * dim; // assuming 2 points per edge
+    size_t offset = 2 * dim; // An edge is defined by its 2 far end points
     if (edges.size() % offset != 0) {
         throw std::runtime_error("invalid edge data: size mismatch.");
     }
 
+    /* The function finds the vertex of the front/back face of a projected
+     * prism onto the surface of a connected sphere. The projection is
+     * performed for points contained within the sphere. The point is
+     * projected along the prism's main axis direction at a distance 'dist'.
+     * We solve the quadratic equation: |point + dist*dir - center|**2 = R**2 */
+    auto adjustToSphere = [](const glm::vec3& point,
+                             const glm::vec3& center,
+                             const float R,
+                             const glm::vec3 dir)
+    {
+        float distToSphere = glm::length(point - center);
+        if (distToSphere < R) {
+            glm::vec3 m = point - center;
+            glm::vec3 dir_unit = glm::normalize(dir);
+            float b = glm::dot(m,dir_unit);
+            float c = glm::dot(m,m) - R * R;
+            float discriminant = b * b - c;
+            if (discriminant < 0.0f)
+                return point;
+            float dist = -b + std::sqrt(discriminant);
+            glm::vec3 p_sph = point + dir_unit * dist;
+            return p_sph;
+        }
+        return point;
+    };
+
+    auto getVertex = [&](unsigned int index) -> glm::vec3 {
+                            return glm::vec3(vertices[index * 3 + 0],
+                                             vertices[index * 3 + 1],
+                                             vertices[index * 3 + 2]);
+    };
     unsigned int vertexOffset = 0;
     for (size_t i = 0; i < edges.size(); i += offset) {
         glm::vec3 p1(0.0f), p2(0.0f);
@@ -33,10 +66,11 @@ void generatePrisms(
             p1[d] = edges[i + d];
             p2[d] = edges[i + dim + d];
         }
+        if (i > 0 && glm::length(p1 - p2) <= 2 * jointRadius)
+            continue;
 
         /* direction of the edge */
-        glm::vec3 dir = p2 - p1;
-        dir = glm::normalize(dir);
+        glm::vec3 dir = glm::normalize(p2 - p1);
 
         /* compute orthogonal vectors for the face's width and height */
         glm::vec3 orth1 = computeOrthogonal3D(dir);
@@ -46,92 +80,96 @@ void generatePrisms(
         glm::vec3 offset1 = orth1 * width * 0.5f;
         glm::vec3 offset2 = orth2 * height * 0.5f;
 
-        /* front face vertices (centered at p1) */
-        glm::vec3 frontTopLeft     = p1 + offset1 + offset2;
-        glm::vec3 frontTopRight    = p1 - offset1 + offset2;
-        glm::vec3 frontBottomLeft  = p1 + offset1 - offset2;
-        glm::vec3 frontBottomRight = p1 - offset1 - offset2;
+        std::vector<glm::vec3> frontEdgePoints, backEdgePoints;
+        /* Loop over each front/back face edges (4 edges per face) */
+        for (int i = 0; i <= numEdgeSamples; ++i) {
+            /* Ensures t varies from -1.0 to 1.0 */
+            float t = -1.0f + 2.0f * (i * 1.0f / numEdgeSamples);
 
-        /* back face vertices (centered at p2) */
-        glm::vec3 backTopLeft     = p2 + offset1 + offset2;
-        glm::vec3 backTopRight    = p2 - offset1 + offset2;
-        glm::vec3 backBottomLeft  = p2 + offset1 - offset2;
-        glm::vec3 backBottomRight = p2 - offset1 - offset2;
+            /* Compute edge points for the front face */
+            glm::vec3 frontTop    = p1 + t * offset1 + offset2;
+            glm::vec3 frontBottom = p1 + t * offset1 - offset2;
+            glm::vec3 frontLeft   = p1 - offset1 + t * offset2;
+            glm::vec3 frontRight  = p1 + offset1 + t * offset2;
 
-        std::vector<glm::vec3> prismVertices = {
-            /* Front face vertices */
-            frontTopLeft, frontTopRight, frontBottomLeft, frontBottomRight,     // 0,1,2,3
-            /* Back face vertices */
-            backTopLeft, backTopRight, backBottomLeft, backBottomRight,         // 4,5,6,7
-            /* Left face vertices */
-            backTopLeft, frontTopLeft, backBottomLeft, frontBottomLeft,         // 8,9,10,11
-            /* Right face vertices */
-            frontTopRight, backTopRight, frontBottomRight, backBottomRight,     // 12,13,14,15
-            /* Top face vertices */
-            backTopLeft, backTopRight, frontTopLeft, frontTopRight,             // 16,17,18,19
-            /* Bottom face vertices */
-            frontBottomLeft, frontBottomRight, backBottomLeft, backBottomRight, // 20,21,22,23
-        };
+            /* Adjust points to fit the sphere */
+            frontEdgePoints.push_back(adjustToSphere(frontTop, p1, jointRadius, dir));
+            frontEdgePoints.push_back(adjustToSphere(frontBottom, p1, jointRadius, dir));
+            frontEdgePoints.push_back(adjustToSphere(frontLeft, p1, jointRadius, dir));
+            frontEdgePoints.push_back(adjustToSphere(frontRight, p1, jointRadius, dir));
 
-        /* Add vertices to the array */
-        for (const auto& v : prismVertices) {
-            vertices.insert(vertices.end(), { v.x, v.y, v.z });
+            /* Compute edge points for the back face */
+            glm::vec3 backTop    = p2 + t * offset1 + offset2;
+            glm::vec3 backBottom = p2 + t * offset1 - offset2;
+            glm::vec3 backLeft   = p2 - offset1 + t * offset2;
+            glm::vec3 backRight  = p2 + offset1 + t * offset2;
+
+            /* Adjust points to fit the sphere */
+            backEdgePoints.push_back(adjustToSphere(backTop, p2, jointRadius, -dir));
+            backEdgePoints.push_back(adjustToSphere(backBottom, p2, jointRadius, -dir));
+            backEdgePoints.push_back(adjustToSphere(backLeft, p2, jointRadius, -dir));
+            backEdgePoints.push_back(adjustToSphere(backRight, p2, jointRadius, -dir));
         }
 
-        /* Face normals */
-        glm::vec3 frontNormal = glm::normalize(glm::cross(frontTopRight - frontTopLeft,
-                                                          frontBottomLeft - frontTopLeft));
-        glm::vec3 backNormal = glm::normalize(glm::cross(backBottomLeft - backTopLeft,
-                                                         backTopRight - backTopLeft));
-        glm::vec3 leftNormal = glm::normalize(glm::cross(frontBottomLeft - frontTopLeft,
-                                                         backTopLeft - frontTopLeft));
-        glm::vec3 rightNormal = glm::normalize(glm::cross(backTopRight - frontTopRight,
-                                                          frontBottomRight - frontTopRight));
-        glm::vec3 topNormal = glm::normalize(glm::cross(frontTopLeft - backTopLeft,
-                                                        backTopRight - backTopLeft));
-        glm::vec3 bottomNormal = glm::normalize(glm::cross(backBottomLeft - backTopLeft,
-                                                           frontBottomLeft - backTopLeft));
+        for (const auto& vert : frontEdgePoints) {
+            vertices.insert(vertices.end(), {vert.x, vert.y, vert.z});
+        }
+        for (const auto& vert : backEdgePoints) {
+            vertices.insert(vertices.end(), {vert.x, vert.y, vert.z});
+        }
+        /* 4 points per sample per face (top_i, bottom_i, left_i, right_i) */
+        size_t verticesPerSample = 4;
 
-        std::vector<glm::vec3> faceNormals = {
-            frontNormal, backNormal,
-            leftNormal, rightNormal,
-            topNormal, bottomNormal
-        };
+        normals.resize(vertices.size());
 
-        for (size_t i = 0; i < 6; ++i) { // Loop over the 6 faces
-            const glm::vec3& normal = faceNormals[i];
-            for (size_t j = 0; j < 4; ++j) { // Each face has 4 vertices
-                normals.insert(normals.end(), { normal.x, normal.y, normal.z });
+        for (size_t j = 0; j < (size_t)numEdgeSamples; ++j) {
+
+            /* Offset indices for the front and back faces */
+            unsigned int frontOffset = vertexOffset;
+            unsigned int backOffset  = vertexOffset +
+                                       (numEdgeSamples + 1) * verticesPerSample;
+
+            for (size_t k = 0; k < verticesPerSample; ++k) {
+                unsigned int v0 = frontOffset + j * verticesPerSample + k;
+                unsigned int v1 = frontOffset + (j + 1) * verticesPerSample + k;
+                unsigned int v2 = backOffset + j * verticesPerSample + k;
+                unsigned int v3 = backOffset + (j + 1) * verticesPerSample + k;
+
+                /* Apply mirroring for correct CCW winding */
+                glm::vec3 n;
+                if (k % 2 == 0)
+                {
+                    indices.push_back(v0);
+                    indices.push_back(v2);
+                    indices.push_back(v1);
+
+                    indices.push_back(v1);
+                    indices.push_back(v2);
+                    indices.push_back(v3);
+
+                    n = glm::normalize(glm::cross(getVertex(v2) - getVertex(v0),
+                                                  getVertex(v1) - getVertex(v0)));
+                }
+                else {
+                    indices.push_back(v0);
+                    indices.push_back(v1);
+                    indices.push_back(v2);
+
+                    indices.push_back(v2);
+                    indices.push_back(v1);
+                    indices.push_back(v3);
+
+                    n = glm::normalize(glm::cross(getVertex(v1) - getVertex(v0),
+                                                  getVertex(v2) - getVertex(v0)));
+                }
+                for (unsigned int v : {v0, v1, v2, v3}) {
+                    normals[v * 3 + 0] = n.x;
+                    normals[v * 3 + 1] = n.y;
+                    normals[v * 3 + 2] = n.z;
+                }
             }
         }
-
-        indices.insert(indices.end(), {
-            /* indices for the front face */
-            vertexOffset + 0, vertexOffset + 2, vertexOffset + 1,
-            vertexOffset + 1, vertexOffset + 2, vertexOffset + 3,
-
-            /* indices for the back face */
-            vertexOffset + 4, vertexOffset + 5, vertexOffset + 6,
-            vertexOffset + 5, vertexOffset + 7, vertexOffset + 6,
-
-            /* indices for the left face */
-            vertexOffset + 8, vertexOffset + 10, vertexOffset + 9,
-            vertexOffset + 9, vertexOffset + 10, vertexOffset + 11,
-
-            /* indices for the right face */
-            vertexOffset + 12, vertexOffset + 14, vertexOffset + 13,
-            vertexOffset + 13, vertexOffset + 14, vertexOffset + 15,
-
-            /* indices for the top face */
-            vertexOffset + 16, vertexOffset + 18, vertexOffset + 17,
-            vertexOffset + 17, vertexOffset + 18, vertexOffset + 19,
-
-            /* indices for the bottom face */
-            vertexOffset + 20, vertexOffset + 22, vertexOffset + 21,
-            vertexOffset + 21, vertexOffset + 22, vertexOffset + 23
-        });
-
-        vertexOffset += 24;  // 24 vertices per prism (4 for each face)
+        vertexOffset += 2 * (numEdgeSamples + 1) * verticesPerSample; // Front and back faces
     }
 }
 
@@ -166,7 +204,7 @@ generateSpheres(
 
                 float x = radius * nx + center[0];
                 float y = radius * ny + center[1];
-                float z = radius * nz + ((dim==3) ? center[2] : 0.0);
+                float z = radius * nz + ((dim==3) ? center[2] : 0.0f);
 
                 vertices.push_back(x);
                 vertices.push_back(y);
@@ -183,7 +221,7 @@ generateSpheres(
                 unsigned int first = vertexOffset + i * (slices + 1) + j;
                 unsigned int second = first + slices + 1;
 
-                // Two triangles for the current quad
+                /* Two triangles for the current quad */
                 indices.push_back(first);
                 indices.push_back(first + 1);
                 indices.push_back(second);

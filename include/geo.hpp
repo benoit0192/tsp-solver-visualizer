@@ -26,9 +26,11 @@ generateQuadVertices(
 void
 generatePrisms(
     const std::vector<float>& edges,
+    const size_t dim,
     const float width,
     const float height,
-    const size_t dim,
+    const int numEdgeSamples,
+    const float jointRadius,
     std::vector<float>& vertices,
     std::vector<float>& normals,
     std::vector<unsigned int>& indices

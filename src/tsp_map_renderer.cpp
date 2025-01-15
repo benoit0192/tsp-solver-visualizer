@@ -78,6 +78,17 @@ typedef struct AppContext {
     InteractionState* interactionState;
 } AppContext;
 
+typedef struct SphereParams {
+    const float radius;
+    const int stacks;
+    const int slices;
+} SphereParams;
+
+typedef struct PrismParams {
+    const float edgeWidth;
+    const int numEdgeSamples;
+} PrismParams;
+
 
 void
 keyCallback(
@@ -371,6 +382,8 @@ void
 preprocessEdges(
     const std::vector<int>& path,
     const std::vector<std::vector<float>>& node_centers,
+    PrismParams& prismParams,
+    const float jointRadius,
     std::vector<float>& edge_vertices,
     std::vector<float>& edge_normals,
     std::vector<unsigned int>& edge_indices
@@ -382,8 +395,9 @@ preprocessEdges(
     if (!node_centers.empty()) {
         dim = node_centers.front().size();
     }
-    const float width = 0.05;
-    generatePrisms(edges, width, width, dim,
+
+    generatePrisms(edges, dim, prismParams.edgeWidth, prismParams.edgeWidth,
+                   prismParams.numEdgeSamples, jointRadius,
                    edge_vertices, edge_normals, edge_indices);
 }
 
@@ -395,7 +409,6 @@ initGLData(
     size_t compSize
 )
 {
-
     gl_Data gl_data  = {};
     gl_data.compSize = compSize;
     gl_data.vSize    = vertices.size();
@@ -457,6 +470,7 @@ clearGLData(
 {
     glDeleteVertexArrays(1, &gl_data.VAO);
     glDeleteBuffers(1, &gl_data.VBO);
+    glDeleteBuffers(1, &gl_data.NBO);
     glDeleteBuffers(1, &gl_data.EBO);
 }
 
@@ -720,11 +734,11 @@ int main(int argc, char *argv[])
     node_centers = normNodes(node_centers);
     std::vector<float> node_vertices, node_normals;
     std::vector<unsigned int> node_indices;
-    struct SphereParams {
-        float radius=0.07;
-        int stacks=20;
-        int slices=20;
-    } sphereParams;
+    SphereParams sphereParams = {
+        .radius = 0.07f,
+        .stacks = 20,
+        .slices = 20,
+    };
     generateSpheres(sphereParams.radius, sphereParams.stacks, sphereParams.slices,
                     node_centers, node_vertices, node_normals, node_indices);
     gl_Data gl_vs = initGLData(node_vertices, node_normals, node_indices, 3);
@@ -732,7 +746,13 @@ int main(int argc, char *argv[])
     /* Init edges data */
     std::vector<float> edge_vertices, edge_normals;
     std::vector<unsigned int> edge_indices;
-    preprocessEdges(path, node_centers, edge_vertices, edge_normals, edge_indices);
+
+    PrismParams prismParams = {
+        .edgeWidth = sphereParams.radius * 0.7f,
+        .numEdgeSamples = 20,
+    };
+    preprocessEdges(path, node_centers, prismParams, sphereParams.radius,
+                    edge_vertices, edge_normals, edge_indices);
     gl_Data gl_es = initGLData(edge_vertices, edge_normals, edge_indices, 3);
 
     /* Callbacks */
