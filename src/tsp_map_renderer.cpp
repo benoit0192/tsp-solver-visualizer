@@ -1,4 +1,5 @@
 #include <vector>
+#include <thread>
 #include <climits>
 #include <sstream>
 #include <iostream>
@@ -70,6 +71,7 @@ typedef struct InteractionState {
     CamParams* camParams;
     float maxCamDist;
     float minCamDist;
+    bool isRotating;
 } InteractionState;
 
 typedef struct AppContext {
@@ -140,6 +142,9 @@ mouseButtonCallback(
 {
     AppContext* ctx = static_cast<AppContext*>(glfwGetWindowUserPointer(window));
     InteractionState* interaction = ctx->interactionState;
+
+    /* Stop the initial rotation animation */
+    interaction->isRotating = false;
 
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) {
@@ -226,6 +231,22 @@ scrollCallback(
     else if (distance < minCamDist) {
         cam->pos = cam->target - zoomDirection * minCamDist;
     }
+}
+
+void
+updateRotationAnimation(
+    InteractionState& interaction,
+    float angularVelocity)
+{
+    if (!interaction.isRotating)
+        return;
+    glm::mat4& rotationMatrix = interaction.rotationMatrix;
+    /* Rotation matrix around the camera y-axis */
+    glm::mat4 rotation = glm::rotate(glm::mat4(1.0f),
+                                     angularVelocity,
+                                     glm::vec3(0.0f, 1.0f, 0.0f));
+    /* Accumulate the rotation */
+    rotationMatrix *= rotation;
 }
 
 bool
@@ -701,13 +722,14 @@ int main(int argc, char *argv[])
     };
 
     InteractionState interaction = {
-        .rotationMatrix = glm::mat4(1.0),
-        .lastPosOnSphere = glm::vec3(0.0),
+        .rotationMatrix = glm::mat4(1.0f),
+        .lastPosOnSphere = glm::vec3(0.0f),
         .isDragging = false,
-        .zoomSpeed = 0.1,
+        .zoomSpeed = 0.1f,
         .camParams = &cam,
-        .maxCamDist = 2.0,
-        .minCamDist = 0.1,
+        .maxCamDist = 2.0f,
+        .minCamDist = 0.1f,
+        .isRotating = true,
     };
 
     AppContext appContext = {
@@ -770,17 +792,36 @@ int main(int argc, char *argv[])
     framebufferSizeCallback(window, win_w, win_h);
 
     /* Background color */
-    glClearColor(0.2, 0.3, 0.3, 1.0);
+    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+
+    const int TARGET_FPS = 60; // Desired FPS
+    const float FRAME_DURATION = 1.0f / TARGET_FPS;
+    auto lastTime = std::chrono::high_resolution_clock::now();
+    float elapsedTime = 0.0f;
+    float angle = -1.0f;
 
     /* Rendering loop */
     while (!glfwWindowShouldClose(window)) {
+        auto frameStartTime = std::chrono::high_resolution_clock::now();
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        updateRotationAnimation(interaction, angle * elapsedTime);
         renderEdges(renderState, gl_es, cam, interaction);
         renderNodes(renderState, gl_vs, cam, interaction);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
+
+        /* Fix FPS */
+        auto frameEndTime = std::chrono::high_resolution_clock::now();
+        float frameTime = std::chrono::duration<float>(frameEndTime - frameStartTime).count();
+        if (frameTime < FRAME_DURATION) {
+            std::this_thread::sleep_for(std::chrono::duration<float>(FRAME_DURATION - frameTime));
+        }
+
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        elapsedTime = std::chrono::duration<float>(currentTime - lastTime).count();
+        lastTime = currentTime;
     }
 
     clearGLData(gl_vs);
