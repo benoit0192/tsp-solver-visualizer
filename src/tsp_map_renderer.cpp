@@ -37,6 +37,7 @@ typedef struct gl_Data
     GLuint VAO;
     GLuint VBO;         // Vertices buffer
     GLuint NBO;         // Normals buffer
+    GLuint WBO;         // Weights buffer
     GLuint EBO;         // Indices buffer
     size_t count;       // Number of vertices
     size_t vSize;       // Total size of flattened vertices data
@@ -386,7 +387,8 @@ preprocessEdges(
     const float jointRadius,
     std::vector<float>& edge_vertices,
     std::vector<float>& edge_normals,
-    std::vector<unsigned int>& edge_indices
+    std::vector<unsigned int>& edge_indices,
+    std::vector<float>& edge_weights
 )
 {
     std::vector<float> edges = extractEdgeNodes(path, node_centers);
@@ -398,7 +400,7 @@ preprocessEdges(
 
     generatePrisms(edges, dim, prismParams.edgeWidth, prismParams.edgeWidth,
                    prismParams.numEdgeSamples, jointRadius,
-                   edge_vertices, edge_normals, edge_indices);
+                   edge_vertices, edge_normals, edge_indices, edge_weights);
 }
 
 gl_Data
@@ -406,6 +408,7 @@ initGLData(
     const std::vector<GLfloat>& vertices,
     const std::vector<GLfloat>& normals,
     const std::vector<GLuint>& indices,
+    const std::vector<GLfloat>& weights,
     size_t compSize
 )
 {
@@ -450,6 +453,13 @@ initGLData(
             (GLvoid*)0);
     glEnableVertexAttribArray(1);
 
+    /* Vertex Buffer Object (WBO) */
+    glGenBuffers(1, &gl_data.WBO);
+    glBindBuffer(GL_ARRAY_BUFFER, gl_data.WBO);
+    glBufferData(GL_ARRAY_BUFFER,
+                 weights.size() * sizeof(GLfloat),
+                 weights.data(),
+                 GL_STATIC_DRAW);
     /* Element Buffer Object (EBO) */
     glGenBuffers(1, &gl_data.EBO);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl_data.EBO);
@@ -472,6 +482,7 @@ clearGLData(
     glDeleteBuffers(1, &gl_data.VBO);
     glDeleteBuffers(1, &gl_data.NBO);
     glDeleteBuffers(1, &gl_data.EBO);
+    glDeleteBuffers(1, &gl_data.WBO);
 }
 
 void
@@ -737,19 +748,19 @@ int main(int argc, char *argv[])
 
     /* Init nodes data */
     node_centers = normNodes(node_centers);
-    std::vector<float> node_vertices, node_normals;
+    std::vector<float> node_vertices, node_normals, node_weights;
     std::vector<unsigned int> node_indices;
     SphereParams sphereParams = {
         .radius = 0.07f,
-        .stacks = 20,
-        .slices = 20,
+        .stacks = 60,
+        .slices = 60,
     };
     generateSpheres(sphereParams.radius, sphereParams.stacks, sphereParams.slices,
                     node_centers, node_vertices, node_normals, node_indices);
-    gl_Data gl_vs = initGLData(node_vertices, node_normals, node_indices, 3);
+    gl_Data gl_vs = initGLData(node_vertices, node_normals, node_indices, node_weights, 3);
 
     /* Init edges data */
-    std::vector<float> edge_vertices, edge_normals;
+    std::vector<float> edge_vertices, edge_normals, edge_weights;
     std::vector<unsigned int> edge_indices;
 
     PrismParams prismParams = {
@@ -757,8 +768,8 @@ int main(int argc, char *argv[])
         .numEdgeSamples = 20,
     };
     preprocessEdges(path, node_centers, prismParams, sphereParams.radius,
-                    edge_vertices, edge_normals, edge_indices);
-    gl_Data gl_es = initGLData(edge_vertices, edge_normals, edge_indices, 3);
+                    edge_vertices, edge_normals, edge_indices, edge_weights);
+    gl_Data gl_es = initGLData(edge_vertices, edge_normals, edge_indices, edge_weights, 3);
 
     /* Callbacks */
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
@@ -793,7 +804,7 @@ int main(int argc, char *argv[])
         glfwSwapBuffers(window);
         glfwPollEvents();
 
-        /* Fix FPS */
+        /* Fixed FPS */
         auto frameEndTime = std::chrono::high_resolution_clock::now();
         float frameTime = std::chrono::duration<float>(frameEndTime - frameStartTime).count();
         if (frameTime < FRAME_DURATION) {

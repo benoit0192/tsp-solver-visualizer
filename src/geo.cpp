@@ -20,7 +20,8 @@ void generatePrisms(
     const float jointRadius,
     std::vector<float>& vertices,
     std::vector<float>& normals,
-    std::vector<unsigned int>& indices
+    std::vector<unsigned int>& indices,
+    std::vector<float>& weights
 )
 {
     size_t offset = 2 * dim; // An edge is defined by its 2 far end points
@@ -59,15 +60,37 @@ void generatePrisms(
                                              vertices[index * 3 + 1],
                                              vertices[index * 3 + 2]);
     };
-    unsigned int vertexOffset = 0;
+
+    float totalPathLen = 0.0f;
     for (size_t i = 0; i < edges.size(); i += offset) {
         glm::vec3 p1(0.0f), p2(0.0f);
         for (size_t d = 0; d < dim; ++d) {
             p1[d] = edges[i + d];
             p2[d] = edges[i + dim + d];
         }
-        if (i > 0 && glm::length(p1 - p2) <= 2 * jointRadius)
+        float edgeLen = glm::length(p1 - p2);
+        /* If the edge's end joints are overlapping, do not create an edge */
+        if (edgeLen <= 2 * jointRadius)
             continue;
+        totalPathLen += edgeLen;
+    }
+
+    unsigned int vertexOffset = 0;
+    float accumulatedLen = 0.0f;
+    for (size_t i = 0; i < edges.size(); i += offset) {
+        glm::vec3 p1(0.0f), p2(0.0f);
+        for (size_t d = 0; d < dim; ++d) {
+            p1[d] = edges[i + d];
+            p2[d] = edges[i + dim + d];
+        }
+        float edgeLen = glm::length(p1 - p2);
+        /* If the edge's end joints are overlapping, do not create an edge */
+        if (edgeLen <= 2 * jointRadius)
+            continue;
+
+        float startGrad = accumulatedLen / totalPathLen;
+        float endGrad   = (accumulatedLen + edgeLen) / totalPathLen;
+        accumulatedLen += edgeLen;
 
         /* direction of the edge */
         glm::vec3 dir = glm::normalize(p2 - p1);
@@ -81,6 +104,7 @@ void generatePrisms(
         glm::vec3 offset2 = orth2 * height * 0.5f;
 
         std::vector<glm::vec3> frontEdgePoints, backEdgePoints;
+        std::vector<float> frontGradWeights, backGradWeights;
         /* Loop over each front/back face edges (4 edges per face) */
         for (int i = 0; i <= numEdgeSamples; ++i) {
             /* Ensures t varies from -1.0 to 1.0 */
@@ -97,7 +121,8 @@ void generatePrisms(
             frontEdgePoints.push_back(adjustToSphere(frontBottom, p1, jointRadius, dir));
             frontEdgePoints.push_back(adjustToSphere(frontLeft, p1, jointRadius, dir));
             frontEdgePoints.push_back(adjustToSphere(frontRight, p1, jointRadius, dir));
-
+            frontGradWeights.insert(frontGradWeights.end(),
+                                    {startGrad, startGrad, startGrad, startGrad});
             /* Compute edge points for the back face */
             glm::vec3 backTop    = p2 + t * offset1 + offset2;
             glm::vec3 backBottom = p2 + t * offset1 - offset2;
@@ -109,6 +134,8 @@ void generatePrisms(
             backEdgePoints.push_back(adjustToSphere(backBottom, p2, jointRadius, -dir));
             backEdgePoints.push_back(adjustToSphere(backLeft, p2, jointRadius, -dir));
             backEdgePoints.push_back(adjustToSphere(backRight, p2, jointRadius, -dir));
+            backGradWeights.insert(backGradWeights.end(),
+                                   {endGrad, endGrad, endGrad, endGrad});
         }
 
         for (const auto& vert : frontEdgePoints) {
@@ -117,6 +144,10 @@ void generatePrisms(
         for (const auto& vert : backEdgePoints) {
             vertices.insert(vertices.end(), {vert.x, vert.y, vert.z});
         }
+        weights.insert(weights.end(),
+                       frontGradWeights.begin(), frontGradWeights.end());
+        weights.insert(weights.end(),
+                       backGradWeights.begin(), backGradWeights.end());
         /* 4 points per sample per face (top_i, bottom_i, left_i, right_i) */
         size_t verticesPerSample = 4;
 
@@ -135,7 +166,7 @@ void generatePrisms(
                 unsigned int v2 = backOffset + j * verticesPerSample + k;
                 unsigned int v3 = backOffset + (j + 1) * verticesPerSample + k;
 
-                /* Apply mirroring for correct CCW winding */
+                /* Apply mirroring for opposite faces to correct CCW winding */
                 glm::vec3 n;
                 if (k % 2 == 0)
                 {

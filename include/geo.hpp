@@ -33,7 +33,8 @@ generatePrisms(
     const float jointRadius,
     std::vector<float>& vertices,
     std::vector<float>& normals,
-    std::vector<unsigned int>& indices
+    std::vector<unsigned int>& indices,
+    std::vector<float>& weights
 );
 
 void

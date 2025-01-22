@@ -5,7 +5,7 @@ in vec3 fragNormal;
 
 out vec4 FragColor;
 
-uniform vec3 objectColor  = vec3(0.1, 0.1, 0.1);
+uniform vec3 objectColor  = vec3(0.85, 0.85, 0.85);
 uniform vec3 ambientColor = vec3(0.8, 0.8, 0.8);
 uniform vec3 lightColor   = vec3(1.0, 1.0, 1.0);
 uniform vec3 lightDir     = normalize(vec3(0.5, -0.5, 0.5));
@@ -30,7 +30,7 @@ void main()
     float spec      = pow(max(dot(norm, halfwayDir), 0.0), shininess);
     vec3 specular   = spec * lightColor;
 
-    vec3 finalColor = clamp((ambient + diffuse + 10.0*specular) * objectColor,
+    vec3 finalColor = clamp((1.2*ambient + 0.2*diffuse + 0.1*specular) * objectColor,
                             0.0, 1.0);
 
     FragColor = vec4(finalColor, 1.0);
