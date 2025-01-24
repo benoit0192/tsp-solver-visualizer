@@ -620,6 +620,7 @@ initOpenGLWindow(
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     /* glfwWindowHint(GLFW_DEPTH_BITS, 24); */
 
+    glfwWindowHint(GLFW_SAMPLES, 4);
     GLFWwindow* window = glfwCreateWindow(windowConfig.windowWidth,
                                           windowConfig.windowHeight,
                                           "TSL Path Map",
