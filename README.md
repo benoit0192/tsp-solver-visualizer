@@ -19,7 +19,7 @@ $ docker/build.sh
 $ script/docker.sh
 ```
 ## Build the solver
-Once built, the program `bin/vanilla-tsp' should be generated.<br>
+Once built, the program `bin/vanilla-tsp` should be generated.<br>
 ```shell
 $ make solver
 ```
@@ -33,7 +33,7 @@ Please refer to the `examples` folder for the file format.
 - `--verbose` is optional and will print extra informational messages.
 
 ## Build the map visualizer
-Once built, the program `bin/map-renderer' should be generated.<br>
+Once built, the program `bin/map-renderer` should be generated.<br>
 ```shell
 $ make map-renderer
 ```
