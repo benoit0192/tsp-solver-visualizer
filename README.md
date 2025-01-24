@@ -1,9 +1,13 @@
-# Travelling Salesman Problem (TSP) Solver & Visualizer 
-This repository provides a simple TSP solver based on the Christofides algorithm.<br>
-It also includes a map visualizer using OpenGL 3.3.<br>
+# Travelling Salesman Problem (TSP) Solver & Visualizer
+<div align="center">
+  <img src="/asset/trefoil_knot.gif" alt="Trefoil Knot">
+</div>
 
-For ease of reproducibility, a Docker environment setup is provided.<br>
-Using Docker is optional as long as the user has the relevant package dependencies to run the program.<br>
+A simple TSP solver based on the Christofides algorithm is provided in this repository.<br>
+It also includes a map visualizer implemented using OpenGL 3.3.<br>
+
+To ensure reproducibility, a Docker environment setup is included.<br>
+Using Docker is optional, as long as the necessary package dependencies are installed on your system.<br>
 
 ## Docker environment setup (optional)
 ### Build the docker image
